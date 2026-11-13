@@ -1727,6 +1727,19 @@ SUBCASE("GATE ENV settings round trip without changing project format version") 
   CHECK(result.p1 == 0); CHECK(result.p2 == 21); CHECK(result.p3 == 17);
   CHECK(result.p4 == 190); CHECK(result.p5 == 33);
   std::remove(path);
+
+  Project presetLoaded;
+  projectInit(&presetLoaded);
+  const char* presetPath = "build/tests/gate_env_roundtrip.cni";
+  REQUIRE(instrumentSave(&saved, presetPath, 0) == 0);
+  REQUIRE(instrumentLoad(&presetLoaded, presetPath, 0) == 0);
+  const Modulation& presetMod = presetLoaded.instruments[0].modulation[0];
+  CHECK(presetMod.type == ModulationType::GateEnv);
+  CHECK(presetMod.destination == 1);
+  CHECK(presetMod.amount == 80);
+  CHECK(presetMod.p1 == 0); CHECK(presetMod.p2 == 21); CHECK(presetMod.p3 == 17);
+  CHECK(presetMod.p4 == 190); CHECK(presetMod.p5 == 33);
+  std::remove(presetPath);
 }
 
 }
