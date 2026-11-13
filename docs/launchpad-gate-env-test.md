@@ -64,13 +64,13 @@ test executable from the side-by-side directory so settings/autosave remain
 separate.
 
 Before copying, check the target directory does not exist and save the
-executable SHA-256 locally. Rollback is simply removal of the new test Pak
-directory:
+executable SHA-256 locally. To roll back while preserving logs and settings,
+rename the test directory so Pak Store no longer discovers it:
 
 ```sh
-adb shell 'rm -rf /mnt/SDCARD/Tools/tg5040/ChooChooTracker-GateEnv-Test.pak'
+adb shell 'mv /mnt/SDCARD/Tools/tg5040/ChooChooTracker-GateEnv-Test.pak /mnt/SDCARD/Tools/tg5040/ChooChooTracker-GateEnv-Test.pak.disabled'
 ```
 
-Do not use that command if the directory contains user data created during
-testing; copy those files out first. No command in these instructions replaces
-the original Pak Store executable.
+Delete the `.disabled` directory only after copying any wanted logs/settings
+out. No command in these instructions replaces the original Pak Store
+executable.
