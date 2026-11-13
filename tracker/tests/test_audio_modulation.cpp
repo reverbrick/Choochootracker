@@ -3,6 +3,7 @@
 #include "pitch_table_utils.h"
 #include "project_utils.h"
 #include "synth/master_effects.h"
+#include "synth/multimode_filter.h"
 #include "synth/track_audio_modulation.h"
 #include <chrono>
 #include <algorithm>
@@ -273,6 +274,63 @@ TEST_CASE("Audio modulation preset keeps the source, signed depth and follower p
   CHECK(mod.p3 == 80);
   CHECK(mod.p4 == 64);
   projectFree(saved.get()); projectFree(loaded.get());
+}
+
+TEST_CASE("Launchpad negative Gate ENV closes a playing sample filter") {
+  auto state = std::unique_ptr<ChipNomadState, decltype(&chipnomadDestroy)>(
+    chipnomadCreate(), chipnomadDestroy);
+  REQUIRE(state != nullptr);
+  auto& p = state->project;
+  p.tracksCount = 1;
+  p.chipsCount = 1;
+  p.linearPitch = 1;
+  p.tickRate = 50;
+  calculateLinearPitchTable12TET(&p);
+  std::vector<int16_t> sampleData(48000);
+  for (int i = 0; i < (int)sampleData.size(); ++i)
+    sampleData[i] = (int16_t)(12000.0 * std::sin(2.0 * M_PI * 4000.0 * i / 48000.0));
+  auto& instrument = p.instruments[0];
+  getInstrumentFunctions(InstrumentType::Sample).init(&instrument);
+  auto& sample = instrument.chip.sample;
+  sample.data = sampleData.data();
+  sample.frameCount = sampleData.size();
+  sample.channels = 1;
+  sample.sampleRate = 48000;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.loopMode = 1;
+  sample.filterEnabled = 1;
+  sample.filterCharacter = 2; // Classic
+  sample.filterMode = 0;      // Low-pass
+  sample.filterCutoffHz = 20000;
+  sample.filterResonance = 128;
+  sample.attack = sample.decay = sample.release = 0;
+  sample.sustain = 255;
+  instrument.modulation[0] = {ModulationType::GateEnv, 7, -128, 0, 0, 0, 255, 0};
+  state->ownsProjectResources = 0;
+  chipnomadInitChips(state.get(), 48000, nullptr);
+  REQUIRE(chipnomadReserveRenderBuffers(state.get(), 512) == 0);
+  REQUIRE(chipnomadQueuePlaybackPreviewNote(state.get(), 0, 45, 0));
+
+  float output[512 * 2];
+  REQUIRE(chipnomadRender(state.get(), output, 512) == 512);
+  double openEnergy = 0;
+  for (int block = 0; block < 4; ++block) {
+    REQUIRE(chipnomadRender(state.get(), output, 512) == 512);
+    for (float value : output) openEnergy += value * value;
+  }
+  REQUIRE(chipnomadQueuePerformanceGate(state.get(), 0, 0, 1));
+  double closedEnergy = 0;
+  for (int block = 0; block < 8; ++block) {
+    REQUIRE(chipnomadRender(state.get(), output, 512) == 512);
+    if (block >= 4)
+      for (float value : output) closedEnergy += value * value;
+  }
+  CHECK(state->playbackState.tracks[0].note.modulation[0].outValue < 0);
+  CHECK(closedEnergy < openEnergy * 0.5);
+  CHECK(state->playbackState.tracks[0].liveControls[liveCutoff] <
+        filterControlFromCutoff(20000));
 }
 
 TEST_CASE("Audio follower Layer benchmark shares one source across seven three-child tracks") {

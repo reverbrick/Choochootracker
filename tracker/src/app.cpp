@@ -1,6 +1,8 @@
 #include "soundbank_library.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
 #include "corelib_gfx.h"
 #include "corelib_font.h"
 #include "corelib_file.h"
@@ -36,6 +38,7 @@
 #include "midi/midi_backend_desktop.h"
 #include "midi_io.h"
 #include "launchpad_grid.h"
+#include "synth/multimode_filter.h"
 #include <math.h>
 #ifdef ANDROID_BUILD
 #include "midi/midi_backend_android.h"
@@ -92,6 +95,40 @@ static bool launchpadSongLayoutActive;
 static bool launchpadMixerLayoutActive;
 static bool launchpadPerformancePadHeld;
 static void appInput(int isKeyDown, int keys, int tapCount);
+
+static bool launchpadGateDiagnosticsEnabled(void) {
+  static int enabled = -1;
+  if (enabled < 0) {
+    const char* value = getenv("CCT_GATE_DIAGNOSTICS");
+    enabled = value && strcmp(value, "1") == 0;
+  }
+  return enabled != 0;
+}
+
+static void launchpadLogGateStatus(void) {
+  if (!launchpadGateDiagnosticsEnabled() || !chipnomadState) return;
+  static int lastInstrument = -2;
+  static int lastAmount = -999;
+  static int lastValue = INT_MIN;
+  static int lastCutoff = -1;
+  const PlaybackStatus* status = chipnomadGetPlaybackStatus(chipnomadState);
+  if (!status) return;
+  const PlaybackTrackState& track = status->tracks[0];
+  const PlaybackModState& gate = track.note.modulation[0];
+  const int instrument = track.note.instrument;
+  const int amount = gate.modulation ? gate.modulation->amount : -999;
+  const int value = gate.outValue;
+  const int cutoff = track.liveControls[liveCutoff];
+  if (instrument == lastInstrument && amount == lastAmount && value == lastValue &&
+      cutoff == lastCutoff) return;
+  lastInstrument = instrument;
+  lastAmount = amount;
+  lastValue = value;
+  lastCutoff = cutoff;
+  fprintf(stderr, "Launchpad Gate1: playing=%u instrument=%d amount=%d out=%d cutoff=%dHz (control=%d)\n",
+          status->isPlaying, instrument, amount, value,
+          filterCutoffFromControl((uint8_t)cutoff), cutoff);
+}
 
 static void launchpadReleasePerformanceGate(void) {
   if (!launchpadPerformancePadHeld) return;
@@ -195,7 +232,10 @@ static void launchpadControlTick(void) {
     const int target = visibleRow * launchpadGrid::kWidth + track;
     if ((status & 0xf0) == 0x80 || ((status & 0xf0) == 0x90 && velocity == 0)) {
       launchpadPresses.release(target);
-      if (mixerLayoutActive && note == 11) launchpadReleasePerformanceGate();
+      if (mixerLayoutActive && note == 11) {
+        launchpadReleasePerformanceGate();
+        if (launchpadGateDiagnosticsEnabled()) fprintf(stderr, "Launchpad Gate1: release received\n");
+      }
       continue;
     }
     if ((status & 0xf0) != 0x90) continue;
@@ -207,6 +247,8 @@ static void launchpadControlTick(void) {
           launchpadPerformancePadHeld = true;
         else
           screenMessage(MESSAGE_TIME_ERROR, "Launchpad FX queue full");
+          if (launchpadGateDiagnosticsEnabled()) fprintf(stderr, "Launchpad Gate1: press velocity=%u queued=%d\n",
+            velocity, launchpadPerformancePadHeld);
       }
       continue;
     }
@@ -230,6 +272,8 @@ static void launchpadControlTick(void) {
     launchpadPresses.reset();
     return;
   }
+
+  if (launchpadPerformancePadHeld) launchpadLogGateStatus();
 
   const bool launchpadSceneLayoutActive = songLayoutActive || mixerLayoutActive;
   const int topRow = launchpadSceneLayoutActive ? screenSongGetTopRow() : -1;
