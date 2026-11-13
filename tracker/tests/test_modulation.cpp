@@ -393,6 +393,16 @@ SUBCASE("cutoff modulation has quadratic musical depth") {
   CHECK(playbackModulateCutoff(100, &state) == 6400); // 100%: six octaves
 }
 
+SUBCASE("negative cutoff modulation lowers cutoff") {
+  Modulation modulation = {.amount = -32};
+  PlaybackModState state = {.modulation = &modulation, .outValue = 8160};
+  CHECK(playbackModulateCutoff(1000, &state) == 768); // 4.5 semitones down
+
+  modulation.amount = -127;
+  state.outValue = 32385;
+  CHECK(playbackModulateCutoff(10000, &state) == 156); // six octaves down
+}
+
 // Test ADSR full cycle
 SUBCASE("ADSR full cycle") {
   Modulation mod = {

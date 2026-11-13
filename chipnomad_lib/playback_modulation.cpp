@@ -584,6 +584,9 @@ int playbackModulateCutoff(int cutoffHz, const PlaybackModState* mod) {
   float normalizedAmount = fabsf(amount) / 127.0f;
   if (normalizedAmount == 0.0f) return cutoffHz;
   float source = mod->outValue / (MOD_MAX_RANGE_F * normalizedAmount);
+  // The amount controls both modulation depth and direction. Keep the source
+  // value intact for bipolar sources, while inverting it for negative amounts.
+  if (amount < 0) source = -source;
   if (source > 1.0f) source = 1.0f;
   if (source < -1.0f) source = -1.0f;
   float semitones = source * 72.0f * normalizedAmount * normalizedAmount;
