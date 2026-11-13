@@ -93,8 +93,51 @@ static int8_t launchpadLedCache[launchpadGrid::kWidth * launchpadGrid::kHeight +
 static launchpadGrid::PressTracker launchpadPresses;
 static bool launchpadSongLayoutActive;
 static bool launchpadMixerLayoutActive;
-static bool launchpadPerformancePadHeld;
+static uint32_t launchpadPerformancePadsHeld;
 static void appInput(int isKeyDown, int keys, int tapCount);
+
+static bool launchpadInstrumentHasGate(const Project& project, uint8_t instrument,
+    int gate, uint8_t visited[PROJECT_MAX_INSTRUMENTS]) {
+  if (instrument >= PROJECT_MAX_INSTRUMENTS || visited[instrument]) return false;
+  visited[instrument] = 1;
+  const Instrument& inst = project.instruments[instrument];
+  for (int i = 0; i < 4; ++i) {
+    const Modulation& mod = inst.modulation[i];
+    if (mod.type == ModulationType::GateEnv && (mod.p1 & 3) == gate && mod.destination != 0)
+      return true;
+  }
+  if (inst.type != InstrumentType::Layer) return false;
+  for (int i = 0; i < INSTRUMENT_LAYER_COUNT; ++i) {
+    const uint8_t child = inst.chip.layer.entries[i].instrument;
+    if (child != EMPTY_VALUE_8 && launchpadInstrumentHasGate(project, child, gate, visited)) return true;
+  }
+  visited[instrument] = 0;
+  return false;
+}
+
+static bool launchpadTrackHasGate(const PlaybackStatus* playback, int track, int gate,
+    int songRow) {
+  if (!chipnomadState || track < 0 || track >= PROJECT_MAX_TRACKS || gate < 0 || gate >= 4)
+    return false;
+  const Project& project = chipnomadState->project;
+  uint8_t instrument = EMPTY_VALUE_8;
+  if (playback && playback->tracks[track].note.instrument < PROJECT_MAX_INSTRUMENTS)
+    instrument = playback->tracks[track].note.instrument;
+  if (instrument == EMPTY_VALUE_8 && songRow >= 0 && songRow < PROJECT_MAX_LENGTH)
+    instrument = lookupInstrument(&chipnomadState->project, songRow, 15, 15, track);
+  if (instrument == EMPTY_VALUE_8) return false;
+  uint8_t visited[PROJECT_MAX_INSTRUMENTS] = {};
+  if (launchpadInstrumentHasGate(project, instrument, gate, visited)) return true;
+  if (playback) {
+    for (int lane = 0; lane < INSTRUMENT_LAYER_COUNT; ++lane) {
+      const uint8_t layerInstrument = playback->layerTracks[track][lane].instrument;
+      memset(visited, 0, sizeof(visited));
+      if (layerInstrument < PROJECT_MAX_INSTRUMENTS &&
+          launchpadInstrumentHasGate(project, layerInstrument, gate, visited)) return true;
+    }
+  }
+  return false;
+}
 
 static bool launchpadGateDiagnosticsEnabled(void) {
   static int enabled = -1;
@@ -130,10 +173,14 @@ static void launchpadLogGateStatus(void) {
           filterCutoffFromControl((uint8_t)cutoff), cutoff);
 }
 
-static void launchpadReleasePerformanceGate(void) {
-  if (!launchpadPerformancePadHeld) return;
-  launchpadPerformancePadHeld = false;
-  if (chipnomadState) chipnomadQueuePerformanceGate(chipnomadState, 0, 0, 0);
+static void launchpadReleasePerformanceGates(void) {
+  if (!launchpadPerformancePadsHeld) return;
+  const uint32_t held = launchpadPerformancePadsHeld;
+  launchpadPerformancePadsHeld = 0;
+  if (!chipnomadState) return;
+  for (int bit = 0; bit < PROJECT_MAX_TRACKS * 4; ++bit)
+    if (held & (UINT32_C(1) << bit))
+      chipnomadQueuePerformanceGate(chipnomadState, bit % PROJECT_MAX_TRACKS, bit / PROJECT_MAX_TRACKS, 0);
 }
 
 static void launchpadInvalidateLeds(void) {
@@ -142,7 +189,7 @@ static void launchpadInvalidateLeds(void) {
 
 static void launchpadControlTick(void) {
   if (!appSettings.launchpadMiniMk3Enabled) {
-    launchpadReleasePerformanceGate();
+    launchpadReleasePerformanceGates();
     if (midiIoLaunchpadConnected()) midiIoLaunchpadStop();
     launchpadInvalidateLeds();
     launchpadSongLayoutActive = false;
@@ -153,9 +200,9 @@ static void launchpadControlTick(void) {
   if (!midiIoLaunchpadConnected()) {
     const launchpadGrid::Layout previousLayout = launchpadMixerLayoutActive
       ? launchpadGrid::Layout::mixerPerformance : launchpadGrid::Layout::inactive;
-    if (launchpadGrid::performanceGateNeedsRelease(launchpadPerformancePadHeld,
+    if (launchpadGrid::performanceGateNeedsRelease(launchpadPerformancePadsHeld != 0,
           previousLayout, launchpadGrid::Layout::inactive, false))
-      launchpadReleasePerformanceGate();
+      launchpadReleasePerformanceGates();
     launchpadMixerLayoutActive = false;
     if (!midiIoLaunchpadStart()) return;
     launchpadInvalidateLeds();
@@ -169,13 +216,23 @@ static void launchpadControlTick(void) {
     currentScreen == &screenMixer && chipnomadState, screenMixerGetPage());
   const bool songLayoutActive = layout == launchpadGrid::Layout::song;
   const bool mixerLayoutActive = layout == launchpadGrid::Layout::mixerPerformance;
+  const int topRow = (songLayoutActive || mixerLayoutActive) ? screenSongGetTopRow() : -1;
+  const PlaybackStatus* playback = (songLayoutActive || mixerLayoutActive)
+    ? chipnomadGetPlaybackStatus(chipnomadState) : NULL;
+  uint8_t performanceGateMap[launchpadGrid::kWidth] = {};
+  if (mixerLayoutActive) {
+    for (int track = 0; track < launchpadGrid::kWidth && track < chipnomadState->project.tracksCount; ++track)
+      for (int gate = 0; gate < 4; ++gate)
+        if (launchpadTrackHasGate(playback, track, gate, topRow))
+          performanceGateMap[track] |= (uint8_t)(1u << gate);
+  }
   if (mixerLayoutActive != launchpadMixerLayoutActive) launchpadInvalidateLeds();
   const launchpadGrid::Layout previousLayout = launchpadMixerLayoutActive
     ? launchpadGrid::Layout::mixerPerformance
     : (launchpadSongLayoutActive ? launchpadGrid::Layout::song : launchpadGrid::Layout::inactive);
-  if (launchpadGrid::performanceGateNeedsRelease(launchpadPerformancePadHeld,
+  if (launchpadGrid::performanceGateNeedsRelease(launchpadPerformancePadsHeld != 0,
         previousLayout, layout, true))
-    launchpadReleasePerformanceGate();
+    launchpadReleasePerformanceGates();
   launchpadMixerLayoutActive = mixerLayoutActive;
   if (songLayoutActive != launchpadSongLayoutActive) {
     launchpadSongLayoutActive = songLayoutActive;
@@ -232,23 +289,30 @@ static void launchpadControlTick(void) {
     const int target = visibleRow * launchpadGrid::kWidth + track;
     if ((status & 0xf0) == 0x80 || ((status & 0xf0) == 0x90 && velocity == 0)) {
       launchpadPresses.release(target);
-      if (mixerLayoutActive && note == 11) {
-        launchpadReleasePerformanceGate();
-        if (launchpadGateDiagnosticsEnabled()) fprintf(stderr, "Launchpad Gate1: release received\n");
+      if (mixerLayoutActive && launchpadGrid::mixerPerformancePad(note)) {
+        const int gate = launchpadGrid::performanceGateForVisibleRow(visibleRow);
+        const int bit = launchpadGrid::performancePadBit(track, gate);
+        if (bit >= 0 && (launchpadPerformancePadsHeld & (UINT32_C(1) << bit))) {
+          launchpadPerformancePadsHeld &= ~(UINT32_C(1) << bit);
+          chipnomadQueuePerformanceGate(chipnomadState, track, gate, 0);
+          if (launchpadGateDiagnosticsEnabled()) fprintf(stderr, "Launchpad Gate%d/Track%d: release received\n", gate + 1, track + 1);
+        }
       }
       continue;
     }
     if ((status & 0xf0) != 0x90) continue;
     if (mixerLayoutActive && visibleRow >= 4) {
-      // Lower half is reserved for FX in Mixer Performance Mode. This phase
-      // implements only bottom-left (track 1, FX row 1).
-      if (launchpadGrid::mixerPerformancePad(note) && !launchpadPerformancePadHeld) {
-        if (chipnomadQueuePerformanceGate(chipnomadState, 0, 0, 1))
-          launchpadPerformancePadHeld = true;
-        else
+      const int gate = launchpadGrid::performanceGateForVisibleRow(visibleRow);
+      const int bit = launchpadGrid::performancePadBit(track, gate);
+      if (bit >= 0 && (performanceGateMap[track] & (1u << gate)) &&
+          !(launchpadPerformancePadsHeld & (UINT32_C(1) << bit))) {
+        if (chipnomadQueuePerformanceGate(chipnomadState, track, gate, 1)) {
+          launchpadPerformancePadsHeld |= UINT32_C(1) << bit;
+          if (launchpadGateDiagnosticsEnabled()) fprintf(stderr,
+            "Launchpad Gate%d/Track%d: press velocity=%u queued=1\n", gate + 1, track + 1, velocity);
+        } else {
           screenMessage(MESSAGE_TIME_ERROR, "Launchpad FX queue full");
-          if (launchpadGateDiagnosticsEnabled()) fprintf(stderr, "Launchpad Gate1: press velocity=%u queued=%d\n",
-            velocity, launchpadPerformancePadHeld);
+        }
       }
       continue;
     }
@@ -263,21 +327,20 @@ static void launchpadControlTick(void) {
     if (!chipnomadQueuePlaybackQueueLiveChain(chipnomadState, track, destination, taps >= 2))
       screenMessage(MESSAGE_TIME_ERROR, "Launchpad chain launch failed");
   }
+  if (playback && !playback->transportPlaying) launchpadReleasePerformanceGates();
   if (pollResult < 0) {
-    if (launchpadGrid::performanceGateNeedsRelease(launchpadPerformancePadHeld,
+    if (launchpadGrid::performanceGateNeedsRelease(launchpadPerformancePadsHeld != 0,
           layout, launchpadGrid::Layout::inactive, false))
-      launchpadReleasePerformanceGate();
+      launchpadReleasePerformanceGates();
     launchpadMixerLayoutActive = false;
     launchpadInvalidateLeds();
     launchpadPresses.reset();
     return;
   }
 
-  if (launchpadPerformancePadHeld) launchpadLogGateStatus();
+  if (launchpadPerformancePadsHeld) launchpadLogGateStatus();
 
   const bool launchpadSceneLayoutActive = songLayoutActive || mixerLayoutActive;
-  const int topRow = launchpadSceneLayoutActive ? screenSongGetTopRow() : -1;
-  const PlaybackStatus* playback = launchpadSceneLayoutActive ? chipnomadGetPlaybackStatus(chipnomadState) : NULL;
   for (int visibleRow = 0; visibleRow < launchpadGrid::kHeight; ++visibleRow) {
     const bool rowEnabled = songLayoutActive || (mixerLayoutActive && launchpadGrid::mixerSceneRow(visibleRow));
     const int songRow = topRow < 0 || !rowEnabled ? -1 : launchpadGrid::songRowForVisibleRow(topRow, visibleRow);
@@ -300,13 +363,17 @@ static void launchpadControlTick(void) {
       const bool urgent = action == LiveQueueAction::urgent || action == LiveQueueAction::stopUrgent;
       const bool queued = queuedChain || queuedStop;
       const launchpadGrid::LedState led = launchpadGrid::ledState(populated, queued, queued && urgent, playing);
-      const int8_t stateCode = (mixerLayoutActive && noteNumber == 11)
-        ? (launchpadPerformancePadHeld ? 6 : 5) : (int8_t)led;
+      const bool performancePad = mixerLayoutActive && launchpadGrid::mixerPerformancePad(noteNumber);
+      const int gate = performancePad ? launchpadGrid::performanceGateForVisibleRow(visibleRow) : -1;
+      const bool mapped = performancePad && gate >= 0 && (performanceGateMap[track] & (1u << gate));
+      const bool held = performancePad && launchpadGrid::performancePadHeld(
+        launchpadPerformancePadsHeld, track, gate);
+      const int8_t stateCode = performancePad ? (held ? 6 : (mapped ? 5 : (int8_t)launchpadGrid::LedState::off)) : (int8_t)led;
       uint8_t colour = launchpadGrid::colourForState(led);
-      if (mixerLayoutActive && noteNumber == 11)
-        colour = launchpadPerformancePadHeld ? launchpadGrid::kGreen : launchpadGrid::kBlue;
+      if (performancePad) colour = launchpadGrid::performancePadColour(mapped, held);
       if (launchpadLedCache[cacheIndex] != stateCode) {
-        midiIoLaunchpadSetPad((uint8_t)noteNumber, colour, led == launchpadGrid::LedState::urgent);
+        midiIoLaunchpadSetPad((uint8_t)noteNumber, colour,
+          !performancePad && led == launchpadGrid::LedState::urgent);
         launchpadLedCache[cacheIndex] = stateCode;
       }
       scenePopulated |= populated;
@@ -1314,7 +1381,7 @@ void appCleanup(void) {
   projectActive = false;
   backgroundCleanup();
 #ifdef PORTMASTER_BUILD
-  launchpadReleasePerformanceGate();
+  launchpadReleasePerformanceGates();
 #endif
   audioManager.stop();
   soundbankShutdown();

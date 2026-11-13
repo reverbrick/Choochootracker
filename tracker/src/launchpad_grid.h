@@ -10,6 +10,7 @@ static constexpr uint8_t kOff = 0;
 static constexpr uint8_t kAmber = 9;
 static constexpr uint8_t kBlue = 45;
 static constexpr uint8_t kGreen = 19;
+static constexpr uint8_t kWhite = 3;
 static constexpr uint8_t kUrgentAmber = 9;
 
 enum class LedState : uint8_t { off, populated, queued, urgent, playing };
@@ -23,7 +24,26 @@ inline Layout layoutFor(bool enabled, bool songScreen, bool mixerScreen, int mix
 }
 
 inline bool mixerSceneRow(int visibleRow) { return visibleRow >= 0 && visibleRow < 4; }
-inline bool mixerPerformancePad(int note) { return note == 11; }
+inline bool mixerPerformancePad(int note) {
+  const int offset = note - 11;
+  if (offset < 0) return false;
+  const int rowFromBottom = offset / 10;
+  const int column = offset % 10;
+  return rowFromBottom < kHeight && column < kWidth && rowFromBottom < 4;
+}
+inline int performanceGateForVisibleRow(int visibleRow) {
+  return visibleRow >= 4 && visibleRow < kHeight ? kHeight - 1 - visibleRow : -1;
+}
+inline int performancePadBit(int track, int gate) {
+  return track >= 0 && track < kWidth && gate >= 0 && gate < 4 ? gate * kWidth + track : -1;
+}
+inline bool performancePadHeld(uint32_t heldMask, int track, int gate) {
+  const int bit = performancePadBit(track, gate);
+  return bit >= 0 && (heldMask & (UINT32_C(1) << bit)) != 0;
+}
+inline uint8_t performancePadColour(bool mapped, bool held) {
+  return held ? kGreen : (mapped ? kWhite : kOff);
+}
 inline bool performanceGateNeedsRelease(bool held, Layout previous, Layout current, bool connected) {
   return held && (!connected ||
     (previous == Layout::mixerPerformance && current != Layout::mixerPerformance));
