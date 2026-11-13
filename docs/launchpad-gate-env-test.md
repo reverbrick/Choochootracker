@@ -42,6 +42,11 @@ gate receive track-scoped events. It cannot verify audible cutoff/delay
 behaviour, disconnect recovery, or absence of audio artifacts; those require
 the Brick and Launchpad.
 
+Gate state belongs to the track. Each instrument modulation slot owns its own
+envelope state. Voices rendered by one track share that track's slot output;
+each active Layer child instrument keeps its own modulation slots while
+receiving the parent track's gate events.
+
 ## Separate Pak installation
 
 Build the `feature/external-gate-envelopes` ref with the repository's
