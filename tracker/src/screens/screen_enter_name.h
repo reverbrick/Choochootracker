@@ -8,6 +8,7 @@ extern "C" {
 // Setup name entry screen with custom prompt and callbacks
 // Returns trimmed name through callback
 void enterNameSetup(const char* title, const char* prompt, const char* initialName, void (*confirmCallback)(const char* name), void (*cancelCallback)(void));
+void enterNameSetupLimited(const char* title, const char* prompt, const char* initialName, int maxLength, int allowEmpty, void (*confirmCallback)(const char* name), void (*cancelCallback)(void));
 
 
 #ifdef __cplusplus

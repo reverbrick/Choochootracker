@@ -49,6 +49,16 @@ TEST_CASE_FIXTURE(EditCommonFixture, "moveDown: single cell") {
   CHECK(H(3, 0) == 1);
 }
 
+TEST_CASE_FIXTURE(EditCommonFixture, "whole Song row moves carry its label") {
+  std::strcpy(chipnomadState->project.songRowLabel[2], "INTRO");
+  CHECK(applySongMoveDown(0, 2, 2, 2) == 1);
+  CHECK(chipnomadState->project.songRowLabel[2][0] == '\0');
+  CHECK(std::strcmp(chipnomadState->project.songRowLabel[3], "INTRO") == 0);
+  CHECK(applySongMoveUp(0, 3, 2, 3) == 1);
+  CHECK(chipnomadState->project.songRowLabel[2][0] == 'I');
+  CHECK(chipnomadState->project.songRowLabel[3][0] == '\0');
+}
+
 TEST_CASE_FIXTURE(EditCommonFixture, "moveDown: pushes below") {
   S(2, 0) = 10;
   S(5, 0) = 20;

@@ -1538,6 +1538,15 @@ void appOnEvent(MainLoopEventData eventData) {
       break;
 #endif
     }
+#ifdef PORTMASTER_BUILD
+    // SDL_CONTROLLER_BUTTON_X is code 2. It is distinct from keyboard X and
+    // only consumed when the active Pak keymap leaves this physical button free.
+    if (!rawInputActive && currentScreen == &screenSong && value == keyUnmapped &&
+        eventData.data.input.deviceType == InputDeviceType::gamepad && eventData.data.input.code == 2) {
+      screenSongOpenRowLabelEditor();
+      break;
+    }
+#endif
 
     if (quickHelpSelectHeld && !rawInputActive && value != keyShift) quickHelpSelectAlone = 0;
 

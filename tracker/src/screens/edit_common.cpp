@@ -1,4 +1,5 @@
 #include "screens.h"
+#include <string.h>
 #include "chipnomad_lib.h"
 #include "synth/multimode_filter.h"
 
@@ -339,13 +340,22 @@ int applyTableRotation(int tableIdx, int startRow, int endRow, int direction) {
 }
 
 int applySongMoveDown(int startCol, int startRow, int endCol, int endRow) {
+  const int moveLabels = startCol == 0 && endCol >= chipnomadState->project.tracksCount - 1;
   // Check if we can move down (bottom row must be empty)
   for (int c = startCol; c <= endCol; c++) {
     if (chipnomadState->project.song[PROJECT_MAX_LENGTH - 1][c] != EMPTY_VALUE_16) {
       return 0;
     }
   }
+  if (moveLabels && chipnomadState->project.songRowLabel[PROJECT_MAX_LENGTH - 1][0]) return 0;
 
+  if (moveLabels) {
+    for (int r = PROJECT_MAX_LENGTH - 1; r > endRow + 1; --r)
+      memcpy(chipnomadState->project.songRowLabel[r], chipnomadState->project.songRowLabel[r - 1], PROJECT_SONG_LABEL_LENGTH + 1);
+    for (int r = endRow; r >= startRow; --r)
+      memcpy(chipnomadState->project.songRowLabel[r + 1], chipnomadState->project.songRowLabel[r], PROJECT_SONG_LABEL_LENGTH + 1);
+    chipnomadState->project.songRowLabel[startRow][0] = '\0';
+  }
   // Push everything below selection down by 1 row (from bottom up)
   for (int c = startCol; c <= endCol; c++) {
     for (int r = PROJECT_MAX_LENGTH - 1; r > endRow + 1; r--) {
@@ -368,6 +378,7 @@ int applySongMoveDown(int startCol, int startRow, int endCol, int endRow) {
 }
 
 int applySongMoveUp(int startCol, int startRow, int endCol, int endRow) {
+  const int moveLabels = startCol == 0 && endCol >= chipnomadState->project.tracksCount - 1;
   // Check if we can move up (space above selection must be empty)
   if (startRow == 0) return 0;
 
@@ -376,7 +387,13 @@ int applySongMoveUp(int startCol, int startRow, int endCol, int endRow) {
       return 0; // Can't move up
     }
   }
+  if (moveLabels && chipnomadState->project.songRowLabel[startRow - 1][0]) return 0;
 
+  if (moveLabels) {
+    for (int r = startRow - 1; r < endRow; ++r)
+      memcpy(chipnomadState->project.songRowLabel[r], chipnomadState->project.songRowLabel[r + 1], PROJECT_SONG_LABEL_LENGTH + 1);
+    chipnomadState->project.songRowLabel[endRow][0] = '\0';
+  }
   // Move selection up
   for (int c = startCol; c <= endCol; c++) {
     for (int r = startRow - 1; r < endRow; r++) {

@@ -9,6 +9,8 @@ static char prompt[32] = "";
 static int isCharEdit = 0;
 static char* editingString = NULL;
 static int editingStringLength = 0;
+static int maxNameLength = 24;
+static int allowEmptyName = 0;
 static void (*onConfirmed)(const char* name);
 static void (*onCancelled)(void);
 
@@ -16,7 +18,7 @@ static void confirmName(void);
 static void fullRedraw(void);
 
 static int getColumnCount(int row) {
-  if (row == 0) return 24; // Name field (24 chars to fit on screen with label)
+  if (row == 0) return maxNameLength;
   if (row == 1) return 2;  // OK, Cancel buttons
   return 1;
 }
@@ -44,7 +46,7 @@ static void drawCursor(int col, int row) {
 static void drawField(int col, int row, CellState state) {
   if (row == 0) {
     gfxSetFgColor(appSettings.colorScheme.textValue);
-    gfxClearRect(0, 4, 24, 1);  // Text field on line below prompt, full 24 chars
+    gfxClearRect(0, 4, maxNameLength, 1);
     gfxPrint(0, 4, enteredName);
   } else if (row == 1) {
     gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
@@ -59,11 +61,11 @@ static void drawField(int col, int row, CellState state) {
 static int onEdit(int col, int row, CellEditAction action) {
   int handled = 0;
   if (row == 0) {
-    int res = editCharacter(action, enteredName, col, 24);
+    int res = editCharacter(action, enteredName, col, maxNameLength);
     if (res == 1) {
       isCharEdit = 1;
       editingString = enteredName;
-      editingStringLength = 24;
+      editingStringLength = maxNameLength;
     } else if (res > 1) {
       handled = 1;
     }
@@ -109,6 +111,14 @@ static ScreenData screenData = {
 };
 
 void enterNameSetup(const char* titleText, const char* promptText, const char* initialName, void (*confirmCallback)(const char* name), void (*cancelCallback)(void)) {
+  enterNameSetupLimited(titleText, promptText, initialName, 24, 0, confirmCallback, cancelCallback);
+}
+
+void enterNameSetupLimited(const char* titleText, const char* promptText, const char* initialName, int maxLength, int allowEmpty, void (*confirmCallback)(const char* name), void (*cancelCallback)(void)) {
+  if (maxLength < 1) maxLength = 1;
+  if (maxLength > 24) maxLength = 24;
+  maxNameLength = maxLength;
+  allowEmptyName = allowEmpty;
   strncpy(title, titleText, sizeof(title) - 1);
   title[sizeof(title) - 1] = 0;
   strncpy(prompt, promptText, sizeof(prompt) - 1);
@@ -143,7 +153,7 @@ static void draw(void) {
 
 static void confirmName(void) {
   // No need to trim - character editing already does this
-  if (strlen(enteredName) == 0) return;
+  if (!allowEmptyName && strlen(enteredName) == 0) return;
 
   if (onConfirmed) {
     onConfirmed(enteredName);
