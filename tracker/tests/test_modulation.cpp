@@ -1,6 +1,7 @@
 #include "doctest.h"
 #include "../../chipnomad_lib/playback_modulation.h"
 #include "../../chipnomad_lib/playback.h"
+#include "../../chipnomad_lib/project_io_common.h"
 #include <initializer_list>
 #include <string.h>
 #include <stdio.h>
@@ -1698,11 +1699,15 @@ SUBCASE("Gate ENV gates independently of note events and retains ADSR per slot")
   CHECK(playback.performanceGates[0] == 0);
 }
 
-TEST_CASE("GATE ENV settings round trip without changing project format version") {
+SUBCASE("GATE ENV settings round trip without changing project format version") {
   Project saved, loaded;
   projectInit(&saved);
   projectInit(&loaded);
   saved.tracksCount = saved.chipsCount = 1;
+  std::strcpy(saved.pitchTable.name, "Gate ENV test");
+  saved.pitchTable.length = 1;
+  std::strcpy(saved.pitchTable.noteNames[0], "C-4");
+  saved.pitchTable.values[0] = 440;
   saved.instruments[0].type = InstrumentType::AY1;
   Modulation& mod = saved.instruments[0].modulation[0];
   mod.type = ModulationType::GateEnv;
@@ -1712,7 +1717,8 @@ TEST_CASE("GATE ENV settings round trip without changing project format version"
 
   const char* path = "build/tests/gate_env_roundtrip.cct";
   REQUIRE(projectSave(&saved, path) == 0);
-  REQUIRE(projectLoad(&loaded, path) == 0);
+  resetPeekConsume();
+  REQUIRE_MESSAGE(projectLoad(&loaded, path) == 0, projectFileError);
   const Modulation& result = loaded.instruments[0].modulation[0];
   CHECK(projectFileVersion == 12);
   CHECK(result.type == ModulationType::GateEnv);
