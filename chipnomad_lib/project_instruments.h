@@ -85,6 +85,7 @@ enum class ModulationType : uint8_t {
   SlowLFO = 8,
   Sequence = 9,
   Audio = 10,
+  GateEnv = 11,
   totalCount,
 };
 

@@ -1655,6 +1655,47 @@ SUBCASE("syncLFO retains its legacy multiplied period") {
   CHECK(state.counter == 0);
 }
 
+SUBCASE("Gate ENV gates independently of note events and retains ADSR per slot") {
+  Modulation first = {.type = ModulationType::GateEnv, .amount = 127,
+    .p1 = 0, .p2 = 4, .p3 = 2, .p4 = 192, .p5 = 4};
+  Modulation second = {.type = ModulationType::GateEnv, .amount = 127,
+    .p1 = 0, .p2 = 2, .p3 = 1, .p4 = 64, .p5 = 8};
+  PlaybackModState a{}, b{};
+  playbackModInit(&a, &first);
+  playbackModInit(&b, &second);
+  playbackModGate(&a, 1);
+  playbackModGate(&b, 1);
+  playbackModNext(&a);
+  playbackModNext(&b);
+  CHECK(a.outValue > 0);
+  CHECK(b.outValue > a.outValue);
+  const int16_t beforeNoteOff = a.outValue;
+  playbackModNoteOff(&a);
+  CHECK(a.outValue == beforeNoteOff);
+  CHECK(a.step == 0);
+  playbackModGate(&a, 0);
+  playbackModNext(&a);
+  CHECK(a.outValue < beforeNoteOff);
+  CHECK(a.outValue >= 0);
+  const int16_t releaseValue = a.outValue;
+  playbackModGate(&a, 1);
+  playbackModNext(&a);
+  CHECK(a.outValue >= releaseValue);
+  CHECK(a.gateHeld);
+
+  PlaybackState playback{};
+  playbackModInit(&playback.tracks[0].note.modulation[0], &first);
+  playbackModInit(&playback.tracks[0].note.modulation[1], &second);
+  playbackModInit(&playback.tracks[1].note.modulation[0], &first);
+  playbackSetPerformanceGate(&playback, 0, 0, 1);
+  CHECK(playback.performanceGates[0] == 1);
+  CHECK(playback.tracks[0].note.modulation[0].gateHeld);
+  CHECK(playback.tracks[0].note.modulation[1].gateHeld);
+  CHECK(!playback.tracks[1].note.modulation[0].gateHeld);
+  playbackSetPerformanceGate(&playback, 0, 0, 0);
+  CHECK(playback.performanceGates[0] == 0);
+}
+
 }
 
 // Tests are run automatically by doctest

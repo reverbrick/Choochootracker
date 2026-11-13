@@ -28,6 +28,19 @@ static int16_t ayWavetableValue(const PlaybackModState* state, uint8_t position)
   return (int16_t)((int32_t)value * (2 * MOD_MAX_RANGE) / 15 - MOD_MAX_RANGE);
 }
 
+static int envelopeParam(const PlaybackModState* state, int index) {
+  if (GET_TYPE(state) != ModulationType::GateEnv) {
+    if (index == 0) return GET_P1(state);
+    if (index == 1) return GET_P2(state);
+    if (index == 2) return GET_P3(state);
+    return GET_P4(state);
+  }
+  if (index == 0) return GET_P2(state);
+  if (index == 1) return GET_P3(state);
+  if (index == 2) return GET_P4(state);
+  return GET_P5(state);
+}
+
 static void handleADSR(PlaybackModState* state) {
   // step: 0 - Attack, 1 - Decay, 2 - Sustain, 3 - Release
 
@@ -39,14 +52,14 @@ static void handleADSR(PlaybackModState* state) {
     // Sustain phase
     if (state->step == 2) {
       // Scale sustain (0-255) to 0-32385 range (exact: 255 * 127 = 32385)
-      envelopeValue = GET_P3(state) * 127;
+      envelopeValue = envelopeParam(state, 2) * 127;
       break;
     }
 
     int duration = 0;
-    if (state->step == 0) duration = GET_P1(state);  // Attack
-    else if (state->step == 1) duration = GET_P2(state);  // Decay
-    else if (state->step == 3) duration = GET_P4(state);  // Release
+    if (state->step == 0) duration = envelopeParam(state, 0);  // Attack
+    else if (state->step == 1) duration = envelopeParam(state, 1);  // Decay
+    else if (state->step == 3) duration = envelopeParam(state, 3);  // Release
 
     if (duration == 0 || state->counter >= duration) {
       // Move to the next ADSR step
@@ -62,7 +75,7 @@ static void handleADSR(PlaybackModState* state) {
         if (state->step == 1) {
           // Decay: from peak to sustain
           state->data1 = MOD_MAX_RANGE;
-          state->data2 = GET_P3(state) * 127;
+          state->data2 = envelopeParam(state, 2) * 127;
         }
         // Continue loop to handle zero-duration phases or enter sustain
       }
@@ -331,6 +344,7 @@ void playbackModInit(PlaybackModState* state, Modulation* mod) {
   state->data1 = 0;
   state->data2 = 0;
   state->outValue = 0;
+  state->gateHeld = 0;
   state->phase = 0.0f;
   if (mod->type == ModulationType::Audio) state->audio = {};
 
@@ -339,7 +353,7 @@ void playbackModInit(PlaybackModState* state, Modulation* mod) {
   state->cachedP2 = GET_P2(state);
 
   // Additional initialization based on modulation type
-  if (GET_TYPE(state) == ModulationType::ADSR) {
+  if (GET_TYPE(state) == ModulationType::ADSR || GET_TYPE(state) == ModulationType::GateEnv) {
     // For ADSR, set initial values for Attack phase
     // Start from 0, target is full range (32385)
     state->data1 = 0;
@@ -382,6 +396,7 @@ void playbackModNext(PlaybackModState* state) {
 
   switch (GET_TYPE(state)) {
     case ModulationType::ADSR:
+    case ModulationType::GateEnv:
       handleADSR(state);
       break;
     case ModulationType::AHD:
@@ -419,6 +434,27 @@ void playbackModNoteOff(PlaybackModState* state) {
       break;
     default:
       break;
+  }
+}
+
+void playbackModGate(PlaybackModState* state, int held) {
+  if (!state || !state->modulation || GET_TYPE(state) != ModulationType::GateEnv) return;
+  if (!!held == !!state->gateHeld) return;
+  state->gateHeld = !!held;
+  if (held) {
+    // Restart attack from the current level to avoid a discontinuity when
+    // retriggered during release.
+    const int amount = GET_AMOUNT(state);
+    state->data1 = (int16_t)((state->outValue * 127) / (amount ? amount : 1));
+    state->data2 = MOD_MAX_RANGE;
+    state->counter = 0;
+    state->step = 0;
+  } else if (state->step < 3) {
+    state->step = 3;
+    state->counter = 0;
+    const int amount = GET_AMOUNT(state);
+    state->data1 = (int16_t)((state->outValue * 127) / (amount ? amount : 1));
+    state->data2 = 0;
   }
 }
 

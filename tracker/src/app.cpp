@@ -96,7 +96,7 @@ static void appInput(int isKeyDown, int keys, int tapCount);
 static void launchpadReleasePerformanceGate(void) {
   if (!launchpadPerformancePadHeld) return;
   launchpadPerformancePadHeld = false;
-  if (chipnomadState) chipnomadQueuePerformanceDelayGate(chipnomadState, 0);
+  if (chipnomadState) chipnomadQueuePerformanceGate(chipnomadState, 0, 0, 0);
 }
 
 static void launchpadInvalidateLeds(void) {
@@ -203,7 +203,7 @@ static void launchpadControlTick(void) {
       // Lower half is reserved for FX in Mixer Performance Mode. This phase
       // implements only bottom-left (track 1, FX row 1).
       if (launchpadGrid::mixerPerformancePad(note) && !launchpadPerformancePadHeld) {
-        if (chipnomadQueuePerformanceDelayGate(chipnomadState, 1))
+        if (chipnomadQueuePerformanceGate(chipnomadState, 0, 0, 1))
           launchpadPerformancePadHeld = true;
         else
           screenMessage(MESSAGE_TIME_ERROR, "Launchpad FX queue full");

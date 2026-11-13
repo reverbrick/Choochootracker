@@ -49,7 +49,7 @@ int modulationIsLiveStick(ModulationType type) {
 }
 
 int modulationIsAdditive(ModulationType type) {
-  return type == ModulationType::LFO || type == ModulationType::SlowLFO ||
+  return type == ModulationType::GateEnv || type == ModulationType::LFO || type == ModulationType::SlowLFO ||
          type == ModulationType::Sequence || type == ModulationType::Audio || modulationIsLiveStick(type);
 }
 

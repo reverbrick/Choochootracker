@@ -548,7 +548,7 @@ void handleNoteOff(PlaybackState* state, int trackIdx) {
   }
 }
 
-static void initModulations(PlaybackTrackState* track, Project* p, uint8_t oldInstrument, uint8_t newInstrument) {
+static void initModulations(PlaybackTrackState* track, Project* p, uint8_t oldInstrument, uint8_t newInstrument, uint8_t gateMask = 0) {
   if (newInstrument == EMPTY_VALUE_8) return;
 
   const Modulation* mods = p->instruments[newInstrument].modulation;
@@ -561,7 +561,7 @@ static void initModulations(PlaybackTrackState* track, Project* p, uint8_t oldIn
 
     // Free and structural LFOs, and rhythmic gates with matching triggers,
     // keep their phase across notes.
-    int keepsPhase = mod->type == ModulationType::Audio || (modulationIsTickLFO(mod->type) &&
+    int keepsPhase = mod->type == ModulationType::GateEnv || mod->type == ModulationType::Audio || (modulationIsTickLFO(mod->type) &&
                       (mod->p2 == static_cast<uint8_t>(LFOTrigger::free) ||
                        mod->p2 == static_cast<uint8_t>(LFOTrigger::phrase) ||
                        mod->p2 == static_cast<uint8_t>(LFOTrigger::chain))) ||
@@ -575,10 +575,14 @@ static void initModulations(PlaybackTrackState* track, Project* p, uint8_t oldIn
     // Initialize modulation if:
     // 1. Instrument changed (always reinit), OR
     // 2. Not an LFO that keeps its phase (retrig/hold/once always reinit)
-    if (instrumentChanged || !keepsPhase) {
+    const bool sameGateEnvelope = mod->type == ModulationType::GateEnv &&
+      track->note.modulation[i].modulation == mod;
+    if ((instrumentChanged && !sameGateEnvelope) || !keepsPhase) {
       playbackModInit(&track->note.modulation[i], (Modulation*)mod);
     }
     playbackModSetAYWavetables(&track->note.modulation[i], p->ayWavetables);
+    if (mod->type == ModulationType::GateEnv && (gateMask & (1u << (mod->p1 & 3))))
+      playbackModGate(&track->note.modulation[i], 1);
   }
 }
 
@@ -799,7 +803,7 @@ void readPhraseRowDirect(PlaybackState* state, int trackIdx, PhraseRow* phraseRo
     }
 
     // Initialize modulations
-    initModulations(track, p, oldInstrument, instrument);
+    initModulations(track, p, oldInstrument, instrument, state->performanceGates[trackIdx]);
 
     // Setup instrument
     setupInstrument(state, trackIdx);
@@ -1272,6 +1276,11 @@ static int16_t sequenceSourceOutput(const PlaybackState* state, PlaybackTrackSta
 }
 
 static void processModulationsForTrack(PlaybackState* state, PlaybackTrackState* track, bool advanceClock = true) {
+  for (int i = 0; i < 4; ++i) {
+    PlaybackModState* mod = &track->note.modulation[i];
+    if (mod->modulation && mod->modulation->type == ModulationType::GateEnv &&
+        mod->modulation->destination && advanceClock) playbackModNext(mod);
+  }
   if (track->note.instrument == EMPTY_VALUE_8) return;
 
   InstrumentType type = state->p->instruments[track->note.instrument].type;
@@ -1306,6 +1315,7 @@ static void processModulationsForTrack(PlaybackState* state, PlaybackTrackState*
     // Skip if modulation not initialized or destination == 0 (no destination)
     if (!mod->modulation || mod->modulation->destination == 0 ||
         mod->modulation->type == ModulationType::FLFO ||
+        mod->modulation->type == ModulationType::GateEnv ||
         mod->modulation->type == ModulationType::Audio ||
         mod->modulation->type == ModulationType::Sequence) continue;
     if (advanceClock || !modulationIsTickLFO(mod->modulation->type)) playbackModNext(mod);
@@ -1531,7 +1541,7 @@ static void syncLayerTracks(PlaybackState* state, int trackIdx, bool advanceCloc
     child.note.volume1 = (uint8_t)((volume * layerVolume + 127) / 255);
     child.note.layerGainActive = 1;
     if (oldInstrument != slot || child.note.noteTriggered)
-      initModulations(&child, state->p, oldInstrument, slot);
+      initModulations(&child, state->p, oldInstrument, slot, state->performanceGates[trackIdx]);
     if (child.note.noteReleased || child.note.noteKilled)
       for (auto& modulation : child.note.modulation) playbackModNoteOff(&modulation);
 
@@ -1860,6 +1870,7 @@ void playbackInit(PlaybackState* state, Project* project) {
   state->scalePreset = project->scalePreset;
   state->bpmTickRateOverride = 0.0f;
   memset(state->midiCC, 0, sizeof(state->midiCC));
+  memset(state->performanceGates, 0, sizeof(state->performanceGates));
 
   initFXHandlers();
   initAYSampleTables();
@@ -2179,6 +2190,7 @@ uint8_t playbackApplyPendingMidiInput(PlaybackState* state) {
 }
 
 void playbackStop(PlaybackState* state) {
+  playbackReleasePerformanceGates(state);
   for (auto& track : state->tracks) {
     memset(&track.inserts, 0, sizeof(track.inserts));
     ++track.insertReset;
@@ -2192,6 +2204,28 @@ void playbackStop(PlaybackState* state) {
   for (int c = 0; c < PROJECT_MAX_CHIPS; c++) {
     state->chips[c].ay.envShape = 0;
   }
+}
+
+static void applyGateToTrack(PlaybackTrackState* track, int gateIdx, int held) {
+  for (auto& mod : track->note.modulation)
+    if (mod.modulation && mod.modulation->type == ModulationType::GateEnv &&
+        (mod.modulation->p1 & 3) == gateIdx) playbackModGate(&mod, held);
+}
+
+void playbackSetPerformanceGate(PlaybackState* state, int trackIdx, int gateIdx, int held) {
+  if (!state || trackIdx < 0 || trackIdx >= PROJECT_MAX_TRACKS || gateIdx < 0 || gateIdx >= 4) return;
+  const uint8_t mask = (uint8_t)(1u << gateIdx);
+  if (!!(state->performanceGates[trackIdx] & mask) == !!held) return;
+  if (held) state->performanceGates[trackIdx] |= mask;
+  else state->performanceGates[trackIdx] &= (uint8_t)~mask;
+  applyGateToTrack(&state->tracks[trackIdx], gateIdx, held);
+  for (auto& child : state->layerTracks[trackIdx]) applyGateToTrack(&child, gateIdx, held);
+}
+
+void playbackReleasePerformanceGates(PlaybackState* state) {
+  if (!state) return;
+  for (int track = 0; track < PROJECT_MAX_TRACKS; ++track)
+    for (int gate = 0; gate < 4; ++gate) playbackSetPerformanceGate(state, track, gate, 0);
 }
 
 void playbackStopPreview(PlaybackState* state, int trackIdx) {

@@ -248,6 +248,7 @@ struct PlaybackState {
   PlaybackChipState chips[PROJECT_MAX_CHIPS];
   PlaybackChipState layerChips[PROJECT_MAX_VOICE_OWNERS];
   uint8_t trackEnabled[PROJECT_MAX_TRACKS];
+  uint8_t performanceGates[PROJECT_MAX_TRACKS]; // runtime Gate ENV bits, one per gate
   LoopRange loopRange;
   StopRange stopRange;
   float liveStickAxes[4];
@@ -373,6 +374,8 @@ float playbackVolumeGain(const PlaybackState* state, const PlaybackTrackState* t
  * @param state Pointer to the playback state
  */
 void playbackStop(PlaybackState* state);
+void playbackSetPerformanceGate(PlaybackState* state, int trackIdx, int gateIdx, int held);
+void playbackReleasePerformanceGates(PlaybackState* state);
 
 /**
  * Plays a single note with an instrument for preview

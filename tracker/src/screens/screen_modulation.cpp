@@ -27,7 +27,7 @@ static SelectionItem sourceCategories[5];
 static SelectionItem insertDestinations[16];
 static char insertLabels[16][64];
 static char insertHelpers[16][64];
-static const SelectionItem envelopeSources[] = {{"ADSR", (int)ModulationType::ADSR, NULL, 0}, {"AHD", (int)ModulationType::AHD, NULL, 0}};
+static const SelectionItem envelopeSources[] = {{"ADSR", (int)ModulationType::ADSR, NULL, 0}, {"AHD", (int)ModulationType::AHD, NULL, 0}, {"GATE ENV", (int)ModulationType::GateEnv, NULL, 0}};
 static const SelectionItem lfoSources[] = {{"LFO", (int)ModulationType::LFO, NULL, 0}, {"syncLFO", (int)ModulationType::SLFO, NULL, 0}, {"slowLFO", (int)ModulationType::SlowLFO, NULL, 0}, {"FAST LFO", (int)ModulationType::FLFO, NULL, 0}};
 static const SelectionItem stickSources[] = {{"LINEAR", (int)ModulationType::StickLinear, NULL, 0}, {"RATE", (int)ModulationType::StickRate, NULL, 0}};
 enum { sequencePitchSelection = -10, sequenceVolumeSelection, sequenceGateSelection };
@@ -80,6 +80,13 @@ static void setModulationType(Modulation* mod, ModulationType type, int modIndex
     mod->p3 = 80;
     mod->p4 = 64;
   }
+  if (type == ModulationType::GateEnv) {
+    mod->p1 = 0; // Gate 1
+    mod->p2 = 8;  // Attack
+    mod->p3 = 8;  // Decay
+    mod->p4 = 192; // Sustain
+    mod->p5 = 12; // Release
+  }
 }
 
 static void sourceSelected(int value) {
@@ -111,7 +118,7 @@ static void sourceCancelled() { screenSetup(&screenModulation, cInstrument); }
 
 static void openSourcePopup(int modIndex) {
   editedModIndex = modIndex;
-  sourceCategories[0] = {"ENVELOPES", -1, envelopeSources, 2};
+  sourceCategories[0] = {"ENVELOPES", -1, envelopeSources, 3};
   sourceCategories[1] = {"LFO", -1, lfoSources, 4};
   sourceCategories[2] = {"STICKS", -1, stickSources, 2};
   sourceCategories[3] = {"SEQUENCE", -1, sequenceSources, 3};
@@ -144,8 +151,10 @@ static const char* modulationParameterName(ModulationType type, int parameter) {
   static const char* stickRate[] = {"Axis", "Ticks", "", "", ""};
   static const char* sequence[] = {"Source", "Mode", "", "", ""};
   static const char* audio[] = {"Track", "Attack", "Release", "Sensitivity", "Mode"};
+  static const char* gate[] = {"Gate", "Attack", "Decay", "Sustain", "Release"};
   const char* const* names = lfo;
   if (type == ModulationType::ADSR) names = adsr;
+  else if (type == ModulationType::GateEnv) names = gate;
   else if (type == ModulationType::AHD) names = ahd;
   else if (type == ModulationType::SLFO) names = slfo;
   else if (type == ModulationType::SlowLFO) names = slowLfo;
@@ -295,6 +304,7 @@ static int getModRow(int row) {
 static const char* modTypeName(ModulationType type) {
   switch (type) {
     case ModulationType::ADSR: return "ADSR";
+    case ModulationType::GateEnv: return "GATE ENV";
     case ModulationType::AHD:  return "AHD";
     case ModulationType::LFO:  return "LFO";
     case ModulationType::SLFO: return "syncLFO";
@@ -346,6 +356,10 @@ static const char* paramLabel(const Modulation* mod, int paramIdx) {
       if (paramIdx == 2) return "Sus";
       if (paramIdx == 3) return "Rel";
       break;
+    case ModulationType::GateEnv: {
+      static const char* labels[] = {"Gate", "Atk", "Dec", "Sus", "Rel"};
+      return paramIdx < 5 ? labels[paramIdx] : NULL;
+    }
     case ModulationType::AHD:
       if (paramIdx == 0) return "Atk";
       if (paramIdx == 1) return "Hold";
@@ -406,6 +420,7 @@ static const char* paramLabel(const Modulation* mod, int paramIdx) {
 static int paramCount(const Modulation* mod) {
   switch (mod->type) {
     case ModulationType::ADSR: return 4;
+    case ModulationType::GateEnv: return 5;
     case ModulationType::AHD:  return 3;
     case ModulationType::SlowLFO:
     case ModulationType::LFO:  return mod->p1 == static_cast<uint8_t>(LFOShape::wavetable) ? 4 : 3;
@@ -498,6 +513,10 @@ static bool valueBar(const Modulation* mod, int modRow, float* position, bool* b
   switch (mod->type) {
     case ModulationType::ADSR:
     case ModulationType::AHD:
+      *position = (&mod->p1)[paramIdx] / 255.0f;
+      return true;
+    case ModulationType::GateEnv:
+      if (paramIdx == 0) return false;
       *position = (&mod->p1)[paramIdx] / 255.0f;
       return true;
     case ModulationType::Audio:
@@ -627,6 +646,9 @@ static void drawField(int col, int row, CellState state) {
       if (mod->type == ModulationType::AHD || mod->type == ModulationType::ADSR) {
         uint8_t* params = &mod->p1;
         gfxPrint(valX, y, byteToHex(params[paramIdx]));
+      } else if (mod->type == ModulationType::GateEnv) {
+        if (paramIdx == 0) gfxPrintf(valX, y, "Gate %u", (unsigned)mod->p1 + 1);
+        else gfxPrint(valX, y, byteToHex((&mod->p1)[paramIdx]));
       } else if (mod->type == ModulationType::Audio) {
         if (paramIdx == 0) gfxPrintf(valX, y, "Track %u", (unsigned)mod->p1 + 1);
         else if (paramIdx == 4) gfxPrint(valX, y, audioModulationModeName(audioModulationMode(*mod)));
@@ -754,6 +776,10 @@ static int onEdit(int col, int row, enum CellEditAction action) {
             screenMessage(0, "%s %hhu ticks", fullName, params[paramIdx]);
           }
         }
+      } else if (mod->type == ModulationType::GateEnv) {
+        if (paramIdx == 0) handled = edit8noLast(action, &mod->p1, 1, 0, 3);
+        else handled = edit8noLast(action, &(&mod->p1)[paramIdx], 16, 0, 255);
+        if (handled && paramIdx == 0) screenMessage(0, "Performance Gate %u", (unsigned)mod->p1 + 1);
       } else if (mod->type == ModulationType::Audio) {
         if (paramIdx == 4) {
           const auto previous = audioModulationMode(*mod);

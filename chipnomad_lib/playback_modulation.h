@@ -34,6 +34,7 @@ struct PlaybackModState {
   // Cached values to detect changes that require reinitialization
   ModulationType cachedType;
   uint8_t cachedP2; // For LFO trigger mode detection
+  uint8_t gateHeld;
 };
 
 void playbackModInit(PlaybackModState* state, Modulation* mod);
@@ -48,6 +49,7 @@ AudioModulationMode playbackModAudioMode(const PlaybackModState* state);
 float playbackModAudioSample(const PlaybackModState* state, float sample);
 int playbackModAudioControlFrames(const PlaybackModState* state, float sampleRate);
 void playbackModNoteOff(PlaybackModState* state);
+void playbackModGate(PlaybackModState* state, int held);
 
 // Helper function to scale modulation output to a specific range
 // modValue: input in range [-32385, 32385] (255 * 127)
