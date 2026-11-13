@@ -155,11 +155,11 @@ struct Modulation {
   ModulationType type;
   uint8_t destination;
   int8_t amount;
-  uint8_t p1; // ADSR: A, AHD: A, LFO: Shape, Sequence: source
-  uint8_t p2; // ADSR: D, AHD: H, LFO: Trig, Sequence: mode
-  uint8_t p3; // ADSR: S, AHD: D, LFO: Period, Sequence Trance Gate: Pattern
-  uint8_t p4; // ADSR: R, AHD: -, LFO: -, Sequence Trance Gate: Rate/Length
-  uint8_t p5; // LFO/SLFO/FLFO Wavetable, Sequence Trance Gate: Trigger/Accents
+  uint8_t p1; // ADSR: A, AHD: A, LFO: Shape, Sequence: source, GateEnv: gate (0..3)
+  uint8_t p2; // ADSR: D, AHD: H, LFO: Trig, Sequence: mode, GateEnv: attack
+  uint8_t p3; // ADSR: S, AHD: D, LFO: Period, Sequence Trance Gate: Pattern, GateEnv: decay
+  uint8_t p4; // ADSR: R, AHD: -, LFO: -, Sequence Trance Gate: Rate/Length, GateEnv: sustain
+  uint8_t p5; // LFO wavetable / Sequence Trance Gate settings, GateEnv: release
 };
 
 inline AudioModulationMode audioModulationMode(const Modulation& mod) {
