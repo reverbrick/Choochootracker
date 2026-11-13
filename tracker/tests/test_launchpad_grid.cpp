@@ -76,3 +76,26 @@ TEST_CASE("Launchpad LED state reflects playing, urgent queue, queued stop and s
   CHECK_FALSE(launchpadGrid::isScreenActive(false, true));
   CHECK_FALSE(launchpadGrid::isScreenActive(true, false));
 }
+
+TEST_CASE("Launchpad Mixer performance layout reserves lower pads without changing Song mode") {
+  using launchpadGrid::Layout;
+  int column = -1, row = -1;
+  CHECK(launchpadGrid::layoutFor(false, true, true, 0) == Layout::inactive);
+  CHECK(launchpadGrid::layoutFor(true, true, true, 0) == Layout::song);
+  CHECK(launchpadGrid::layoutFor(true, false, true, 0) == Layout::mixerPerformance);
+  CHECK(launchpadGrid::layoutFor(true, false, true, 1) == Layout::inactive);
+  CHECK(launchpadGrid::mixerSceneRow(0));
+  CHECK(launchpadGrid::mixerSceneRow(3));
+  CHECK_FALSE(launchpadGrid::mixerSceneRow(4));
+  CHECK_FALSE(launchpadGrid::mixerSceneRow(7));
+  CHECK(launchpadGrid::mixerPerformancePad(11));
+  CHECK_FALSE(launchpadGrid::mixerPerformancePad(12));
+  CHECK(launchpadGrid::performanceGateNeedsRelease(true, Layout::mixerPerformance, Layout::song, true));
+  CHECK(launchpadGrid::performanceGateNeedsRelease(true, Layout::mixerPerformance, Layout::inactive, false));
+  CHECK_FALSE(launchpadGrid::performanceGateNeedsRelease(false, Layout::mixerPerformance, Layout::inactive, false));
+  CHECK_FALSE(launchpadGrid::performanceGateNeedsRelease(true, Layout::mixerPerformance, Layout::mixerPerformance, true));
+  CHECK(launchpadGrid::coordinatesForNote(11, &column, &row));
+  CHECK(column == 0);
+  CHECK(row == 7);
+  CHECK(launchpadGrid::songRowForVisibleRow(24, 7) == 31); // unchanged Song mapping
+}

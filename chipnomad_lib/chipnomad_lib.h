@@ -4,6 +4,7 @@
 #include "chips/chips.h"
 #include "project.h"
 #include "playback.h"
+#include "performance_envelope.h"
 #include "synth/track_tilt.h"
 #include "synth/instrument_eq.h"
 #include "utils.h"
@@ -99,6 +100,8 @@ struct ChipNomadState {
   // UI owns project; the audio callback reads only audioProject.
   Project audioProject;
   PlaybackState playbackState;
+  // Audio-thread-owned runtime overlay; not part of Project serialization.
+  PerformanceEnvelope performanceDelayEnvelope;
   SoundChip* chips[PROJECT_MAX_CHIPS];
   // Dedicated AY instances for Layer lanes. Normal owners remain null.
   SoundChip* layerAYChips[VOICE_OWNER_COUNT];
@@ -270,6 +273,8 @@ int chipnomadQueuePlaybackQueueLiveChain(ChipNomadState* state, int trackIdx, in
 // One queued command for all tracks; each uses its own chain end (urgent: phrase
 // end). Empty destination cells stop their track. This is not a global bar clock.
 int chipnomadQueuePlaybackQueueLiveScene(ChipNomadState* state, int songRow, int urgent);
+// Momentary Launchpad prototype gate. Events are consumed on the audio thread.
+int chipnomadQueuePerformanceDelayGate(ChipNomadState* state, int pressed);
 int chipnomadQueuePlaybackPreviewNote(ChipNomadState* state, int trackIdx, uint8_t note, uint8_t instrument);
 int chipnomadQueueMidiInput(ChipNomadState* state, int track, uint8_t note, uint8_t instrument,
                             uint8_t velocity, uint64_t timestamp, int record, MidiRecordMode mode);

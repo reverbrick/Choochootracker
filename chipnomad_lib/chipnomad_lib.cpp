@@ -155,6 +155,13 @@ class AudioCommandQueue {
     return pushCommand(kSetScale, root, preset);
   }
 
+  int pushPerformanceGate(bool pressed) {
+    if (pushCommand(kPerformanceGate, pressed ? 1 : 0)) return 1;
+    // A lost release must never leave the momentary control stuck on.
+    if (!pressed) performanceReleaseRequested_.store(1, std::memory_order_release);
+    return 0;
+  }
+
   void discardProject() {
     int old = projectPublished_.exchange(-1, std::memory_order_acq_rel);
     if (old >= 0) releaseProject(old);
@@ -373,6 +380,9 @@ class AudioCommandQueue {
             playbackQueueLiveChain(playback, t, absent ? -1 : command.a, command.b);
           }
           break;
+        case kPerformanceGate:
+          state->performanceDelayEnvelope.gate(command.a != 0);
+          break;
         case kPreviewNote: playbackPreviewNote(playback, command.a, (uint8_t)command.b, (uint8_t)command.c); break;
         case kMonkPreview:
           state->monkPreview->kill();
@@ -437,6 +447,8 @@ class AudioCommandQueue {
       tail = (tail + 1) % kCommandCapacity;
     }
     commandTail_.store(tail, std::memory_order_release);
+    if (performanceReleaseRequested_.exchange(0, std::memory_order_acq_rel))
+      state->performanceDelayEnvelope.gate(false);
   }
 
   void publishStatus(const PlaybackState* playback, uint64_t linkPhaseTicks, uint64_t linkPhaseTickMicros) {
@@ -487,7 +499,7 @@ class AudioCommandQueue {
   struct AudioCommand { uint8_t type; int a, b, c, d; uint64_t timestamp; PhraseRow row; InstrumentOPLL patch; InstrumentOPL opl; InstrumentSimpleChip simple; InstrumentDX7 dx7; InstrumentFourOp fourOp; InstrumentSID sid; InstrumentMonk monk; };
   // kStartPhraseRowFull is appended after upstream's preview commands so the
   // raw command IDs 14/15/16 used by applyCommands keep their meaning.
-  enum CommandType { kStartSong, kStartChain, kStartPhrase, kStartPhraseRow, kQueuePhrase, kPreviewNote, kStopPreview, kClearTrackFX, kStartLiveChain, kQueueLiveChain, kSetScale, kChipPreview, kOPLPreview, kSimplePreview, kStartPhraseRowFull = 17, kStartSongIfStopped, kMonkPreview, kQueueLiveScene };
+  enum CommandType { kStartSong, kStartChain, kStartPhrase, kStartPhraseRow, kQueuePhrase, kPreviewNote, kStopPreview, kClearTrackFX, kStartLiveChain, kQueueLiveChain, kSetScale, kChipPreview, kOPLPreview, kSimplePreview, kStartPhraseRowFull = 17, kStartSongIfStopped, kMonkPreview, kQueueLiveScene, kPerformanceGate };
   static constexpr unsigned int kSlotCount = 3;
   static constexpr unsigned int kCommandCapacity = 64;
   struct MidiRecordCommand { int a, b, c, d; uint64_t timestamp; };
@@ -639,6 +651,7 @@ class AudioCommandQueue {
   std::atomic<unsigned int> commandTail_{0};
   std::atomic<int> commandOverflow_{0};
   std::atomic<int> renderBufferOverflow_{0};
+  std::atomic<int> performanceReleaseRequested_{0};
 };
 
 static int16_t motionRecordLast[PROJECT_MAX_TRACKS][fxTotalCount][7];
@@ -1021,6 +1034,8 @@ static float effectiveTrackSend(ChipNomadState* state, int trackIdx,
         ? value + modulation : modulation;
     }
   }
+  if (!reverb && trackIdx == 0)
+    value = state->performanceDelayEnvelope.applyPercentOffset(value, 60);
   value = clampInt(value, 0, 100);
   return state->audioProject.perceptualEffects ? mixerSendGain((uint8_t)value) : value / 100.0f;
 }
@@ -1906,6 +1921,10 @@ int chipnomadQueuePlaybackQueueLiveScene(ChipNomadState* state, int songRow, int
   }
   return state->audioCommands->pushCommand(20, songRow, urgent);
 }
+int chipnomadQueuePerformanceDelayGate(ChipNomadState* state, int pressed) {
+  return state && state->audioCommands
+    ? state->audioCommands->pushPerformanceGate(pressed != 0) : 0;
+}
 int chipnomadQueuePlaybackPreviewNote(ChipNomadState* state, int trackIdx, uint8_t note, uint8_t instrument) {
   return state && state->audioCommands ? state->audioCommands->pushCommand(5, trackIdx, note, instrument) : 0;
 }
@@ -2121,6 +2140,8 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
     if (state->playbackState.tracks[t].note.noteTriggered && state->insertChains[t])
       state->insertChains[t]->trigger();
   const int isPlaying = playbackIsPlaying(&state->playbackState);
+  if (wasPlaying && !isPlaying)
+    state->performanceDelayEnvelope.gate(false);
   // Auditioning a note/row is not a transport start for external gear.
   const int transportPlaying = playbackTransportIsPlaying(&state->playbackState);
   midiRouterMasterTick(state->midiRouter, transportPlaying, dueMicros);
@@ -2164,6 +2185,8 @@ static void activeEffectBuses(ChipNomadState* state, bool* reverb, bool* delay) 
     *reverb |= effectiveTrackSend(state, i, true) > 0.0f;
     *delay |= effectiveTrackSend(state, i, false) > 0.0f;
   }
+  *delay |= state->performanceDelayEnvelope.held() ||
+    state->performanceDelayEnvelope.output() > 0.0f;
   *reverb |= *delay && state->audioProject.delayReverbSend > 0;
 }
 
@@ -2523,6 +2546,11 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
       break;
     }
     int frames = (int)state->frameSampleCounter < samplesLeft ? (int)state->frameSampleCounter : samplesLeft;
+    // Keep the performance send ramp moving at a short audio chunk interval
+    // instead of holding each value for a whole tracker tick (typically
+    // several hundred samples). This is enabled only while the overlay moves.
+    if (state->performanceDelayEnvelope.held() || state->performanceDelayEnvelope.output() > 0.0f)
+      frames = std::min(frames, 128);
     updateAudioInputRoutedTracks(state);
     if (state->audioInputRoutedTrackMask)
       frames = std::min(frames, AUDIO_INPUT_ROUTE_DELAY_FRAMES - state->audioInputRoutePosition);
@@ -2535,6 +2563,7 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
       prepareAudioWaveSamples(state, frames);
       updateAudioRateModulations(state, frames);
     }
+    state->performanceDelayEnvelope.advance(frames, state->sampleRate);
     float* output = buffer + (samples - samplesLeft) * 2;
     bool hasReverb, hasDelay;
     if (!prepareRenderChunk(state, output, frames, &hasReverb, &hasDelay)) return 0;

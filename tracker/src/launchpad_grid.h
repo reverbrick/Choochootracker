@@ -13,6 +13,21 @@ static constexpr uint8_t kGreen = 19;
 static constexpr uint8_t kUrgentAmber = 9;
 
 enum class LedState : uint8_t { off, populated, queued, urgent, playing };
+enum class Layout : uint8_t { inactive, song, mixerPerformance };
+
+inline Layout layoutFor(bool enabled, bool songScreen, bool mixerScreen, int mixerPage) {
+  if (!enabled) return Layout::inactive;
+  if (songScreen) return Layout::song;
+  if (mixerScreen && mixerPage == 0) return Layout::mixerPerformance;
+  return Layout::inactive;
+}
+
+inline bool mixerSceneRow(int visibleRow) { return visibleRow >= 0 && visibleRow < 4; }
+inline bool mixerPerformancePad(int note) { return note == 11; }
+inline bool performanceGateNeedsRelease(bool held, Layout previous, Layout current, bool connected) {
+  return held && (!connected ||
+    (previous == Layout::mixerPerformance && current != Layout::mixerPerformance));
+}
 
 inline LedState ledState(bool populated, bool queued, bool urgent, bool playing) {
   if (playing) return LedState::playing;
