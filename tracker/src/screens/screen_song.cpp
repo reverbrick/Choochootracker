@@ -10,6 +10,7 @@
 #include "pattern_clone_utils.h"
 #include "audio_manager.h"
 #include "app.h"
+#include "screen_enter_name.h"
 
 #include "copy_paste.h"
 #include <string.h>
@@ -52,12 +53,15 @@ static uint32_t liveToggleFrame = 0;
 
 static int getColumnCount(int row);
 static void drawStatic(void);
+static void fullRedraw(void);
 static void drawField(int col, int row, CellState state);
 static void drawRowHeader(int row, CellState state);
 static void drawColHeader(int col, CellState state);
 static void drawCursor(int col, int row);
 static void drawSelection(int col1, int row1, int col2, int row2);
 static int onEdit(int col, int row, CellEditAction action);
+static void songLabelConfirmed(const char* label);
+static void songLabelCancelled(void);
 static LoopRange getLoopRange(void);
 
 static ScreenData screen = {
@@ -213,6 +217,23 @@ static void drawField(int col, int row, CellState state) {
     setCellColor(state, chain == EMPTY_VALUE_16, chain != EMPTY_VALUE_16 && viewModeHasNotes(&chipnomadState->project, chain));
   }
   gfxPrint(3 + col * 3, 3 + row - screen.topRow, chain == EMPTY_VALUE_16 ? "--" : byteToHex(chain));
+  if (col == chipnomadState->project.tracksCount - 1) {
+    gfxSetFgColor(appSettings.colorScheme.textInfo);
+    gfxClearRect(26, 3 + row - screen.topRow, PROJECT_SONG_LABEL_LENGTH, 1);
+    gfxPrint(26, 3 + row - screen.topRow, chipnomadState->project.songRowLabel[row]);
+  }
+}
+
+static void songLabelConfirmed(const char* label) {
+  strncpy(chipnomadState->project.songRowLabel[screen.cursorRow], label, PROJECT_SONG_LABEL_LENGTH);
+  chipnomadState->project.songRowLabel[screen.cursorRow][PROJECT_SONG_LABEL_LENGTH] = '\0';
+  projectModified = 1;
+  screenSetup(&screenSong, -1);
+  fullRedraw();
+}
+
+static void songLabelCancelled(void) {
+  screenSetup(&screenSong, -1);
 }
 
 static void drawRowHeader(int row, CellState state) {
@@ -478,7 +499,11 @@ static int onEdit(int col, int row, CellEditAction action) {
     handled = editCell(col, row, action);
   }
 
-  if (handled) projectModified = 1;
+  if (handled) {
+    if (action == CellEditAction::clear && startCol == 0 && endCol >= chipnomadState->project.tracksCount - 1)
+      for (int r = startRow; r <= endRow; ++r) chipnomadState->project.songRowLabel[r][0] = '\0';
+    projectModified = 1;
+  }
   return handled;
   return 0;
 }
@@ -646,6 +671,8 @@ static void songMergeSelectedChainsUp(void) {
 
 static int onInput(int isKeyDown, int keys, int tapCount) {
   int handled = 0;
+  // Physical gamepad X is handled in app.cpp while its raw InputCode is still
+  // available; this handler deliberately does not bind keyboard letter X.
   if (grooveboxEditorActive && chipnomadState->project.viewMode == ViewMode::classic &&
       screen.selectMode == 0) {
     // Wait for release so EDIT+PLAY cannot create a pattern before queuing.
@@ -955,6 +982,11 @@ int songKeyJazzHandleRawKey(InputCode input, int isDown) {
       int tracksCount = chipnomadState->project.tracksCount;
       for (int c = 0; c < tracksCount; c++)
         for (int i = 0; i < count; i++) shiftSongColumnUp(c, startRow);
+      for (int r = startRow; r < PROJECT_MAX_LENGTH; ++r) {
+        int source = r + count;
+        if (source < PROJECT_MAX_LENGTH) memcpy(chipnomadState->project.songRowLabel[r], chipnomadState->project.songRowLabel[source], PROJECT_SONG_LABEL_LENGTH + 1);
+        else chipnomadState->project.songRowLabel[r][0] = '\0';
+      }
       screen.cursorRow = startRow;
       screen.selectMode = 0;
       fullRedraw();
@@ -970,6 +1002,13 @@ int songKeyJazzHandleRawKey(InputCode input, int isDown) {
       int count = endRow - startRow + 1;
       for (int c = startCol; c <= endCol; c++)
         for (int i = 0; i < count; i++) shiftSongColumnUp(c, startRow);
+      if (startCol == 0 && endCol >= chipnomadState->project.tracksCount - 1) {
+        for (int r = startRow; r < PROJECT_MAX_LENGTH; ++r) {
+          int source = r + count;
+          if (source < PROJECT_MAX_LENGTH) memcpy(chipnomadState->project.songRowLabel[r], chipnomadState->project.songRowLabel[source], PROJECT_SONG_LABEL_LENGTH + 1);
+          else chipnomadState->project.songRowLabel[r][0] = '\0';
+        }
+      }
       screen.cursorRow = startRow > 0 ? startRow - 1 : 0;
       screen.selectMode = 0;
       fullRedraw();
@@ -982,10 +1021,13 @@ int songKeyJazzHandleRawKey(InputCode input, int isDown) {
       int row = screen.cursorRow;
       int lastRow = screen.rows - 1;
       int tracksCount = chipnomadState->project.tracksCount;
-      for (int r = lastRow; r > row; r--)
+      for (int r = lastRow; r > row; r--) {
         for (int c = 0; c < tracksCount; c++)
           chipnomadState->project.song[r][c] = chipnomadState->project.song[r - 1][c];
+        memcpy(chipnomadState->project.songRowLabel[r], chipnomadState->project.songRowLabel[r - 1], PROJECT_SONG_LABEL_LENGTH + 1);
+      }
       for (int c = 0; c < tracksCount; c++) chipnomadState->project.song[row][c] = EMPTY_VALUE_16;
+      chipnomadState->project.songRowLabel[row][0] = '\0';
       fullRedraw();
     }
     return 1;
@@ -1023,6 +1065,13 @@ int songKeyJazzHandleRawKey(InputCode input, int isDown) {
 
 static ScreenPlaybackLevel getPlaybackLevel(void) {
   return ScreenPlaybackLevel::song;
+}
+
+void screenSongOpenRowLabelEditor(void) {
+  if (!chipnomadState || currentScreen != &screenSong) return;
+  enterNameSetupLimited("EDIT SCENE", "Label (9 chars):", chipnomadState->project.songRowLabel[screen.cursorRow],
+    PROJECT_SONG_LABEL_LENGTH, 1, songLabelConfirmed, songLabelCancelled);
+  screenSetup(&screenEnterName, -1);
 }
 
 const AppScreen screenSong = {

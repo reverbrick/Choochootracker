@@ -15,6 +15,8 @@ uint8_t cpBufWavetable[32];  // 32 4-bit values
 static int cpBufGrooveLength = 0;
 static int cpBufSongRows = 0;
 static int cpBufSongCols = 0;
+static int cpBufSongHasLabels = 0;
+static char cpBufSongLabels[PROJECT_MAX_LENGTH][PROJECT_SONG_LABEL_LENGTH + 1];
 static int cpBufChainRows = 0;
 static int cpBufChainStartCol;
 static int cpBufChainEndCol;
@@ -35,6 +37,7 @@ void resetCopyBuffers(void) {
   cpBufGrooveLength = 0;
   cpBufSongRows = 0;
   cpBufSongCols = 0;
+  cpBufSongHasLabels = 0;
   cpBufChainRows = 0;
   cpBufPhraseRows = 0;
   cpBufTableRows = 0;
@@ -95,6 +98,7 @@ int pasteGroove(int grooveIdx, int startRow) {
 }
 
 void copySong(int startCol, int startRow, int endCol, int endRow, int isCut) {
+  cpBufSongHasLabels = startCol == 0 && endCol >= chipnomadState->project.tracksCount - 1;
   if (isCut) {
     bool empty = true;
     for (int row = startRow; row <= endRow && empty; ++row)
@@ -103,6 +107,9 @@ void copySong(int startCol, int startRow, int endCol, int endRow, int isCut) {
           empty = false;
           break;
         }
+    if (empty && cpBufSongHasLabels)
+      for (int row = startRow; row <= endRow; ++row)
+        if (chipnomadState->project.songRowLabel[row][0]) { empty = false; break; }
     if (empty) {
       // Removing an empty gap must not replace the chains just cut to the clipboard.
       const int count = endRow - startRow + 1;
@@ -117,6 +124,10 @@ void copySong(int startCol, int startRow, int endCol, int endRow, int isCut) {
   cpBufSongCols = endCol - startCol + 1;
 
   for (int row = 0; row < cpBufSongRows; row++) {
+    if (cpBufSongHasLabels) {
+      memcpy(cpBufSongLabels[row], chipnomadState->project.songRowLabel[startRow + row], PROJECT_SONG_LABEL_LENGTH + 1);
+      if (isCut) chipnomadState->project.songRowLabel[startRow + row][0] = '\0';
+    }
     for (int col = 0; col < cpBufSongCols; col++) {
       cpBufSong[row][col] = chipnomadState->project.song[startRow + row][startCol + col];
       if (isCut) {
@@ -128,6 +139,9 @@ void copySong(int startCol, int startRow, int endCol, int endRow, int isCut) {
 
 int pasteSong(int startCol, int startRow) {
   // Push down existing data in the paste area
+  if (cpBufSongHasLabels && startCol == 0 && startCol + cpBufSongCols >= chipnomadState->project.tracksCount)
+    for (int row = PROJECT_MAX_LENGTH - 1; row >= startRow + cpBufSongRows; --row)
+      memcpy(chipnomadState->project.songRowLabel[row], chipnomadState->project.songRowLabel[row - cpBufSongRows], PROJECT_SONG_LABEL_LENGTH + 1);
   for (int col = startCol; col < startCol + cpBufSongCols && col < PROJECT_MAX_TRACKS; col++) {
     for (int row = PROJECT_MAX_LENGTH - 1; row >= startRow + cpBufSongRows; row--) {
       chipnomadState->project.song[row][col] = chipnomadState->project.song[row - cpBufSongRows][col];
@@ -138,6 +152,8 @@ int pasteSong(int startCol, int startRow) {
   int rowsPasted = 0;
   for (int row = 0; row < cpBufSongRows && startRow + row < PROJECT_MAX_LENGTH; row++) {
     rowsPasted++;
+    if (cpBufSongHasLabels && startCol == 0 && startCol + cpBufSongCols >= chipnomadState->project.tracksCount)
+      memcpy(chipnomadState->project.songRowLabel[startRow + row], cpBufSongLabels[row], PROJECT_SONG_LABEL_LENGTH + 1);
     for (int col = 0; col < cpBufSongCols && startCol + col < PROJECT_MAX_TRACKS; col++) {
       chipnomadState->project.song[startRow + row][startCol + col] = cpBufSong[row][col];
     }

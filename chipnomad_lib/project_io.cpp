@@ -336,6 +336,7 @@ static int projectLoadPitchTable(FILE* file, Project* p) {
 
 static int projectLoadSong(FILE* file, Project* p) {
   char buf[4];
+  memset(p->songRowLabel, 0, sizeof(p->songRowLabel));
   char* line = peekLine(file);
   if (line == NULL) return 1;
   if (strcmp(line, "## Song")) return 1;
@@ -370,6 +371,15 @@ static int projectLoadSong(FILE* file, Project* p) {
       } else {
         p->songHighlight[idx][c] = 0;
       }
+    }
+    // Labels follow the fixed-width Song cells after a tab delimiter. The
+    // track/highlight parser above intentionally continues to accept older
+    // rows with no delimiter, and older versions ignore this trailing text.
+    size_t labelOffset = (size_t)p->tracksCount * 3 - 1;
+    if (line[labelOffset] == '*') ++labelOffset;
+    if (line[labelOffset] == '\t') {
+      strncpy(p->songRowLabel[idx], line + labelOffset + 1, PROJECT_SONG_LABEL_LENGTH);
+      p->songRowLabel[idx][PROJECT_SONG_LABEL_LENGTH] = '\0';
     }
     idx++;
     consumeLine(file);
@@ -1660,6 +1670,7 @@ static int projectSaveSong(FILE* file, Project* project) {
         break;
       }
     }
+    if (project->songRowLabel[songLength][0]) isEmpty = 0;
     if (!isEmpty) {
       break;
     }
@@ -1682,6 +1693,7 @@ static int projectSaveSong(FILE* file, Project* project) {
         fprintf(file, " ");
       }
     }
+    if (project->songRowLabel[c][0]) fprintf(file, "\t%s", project->songRowLabel[c]);
     fprintf(file, "\n");
   }
 

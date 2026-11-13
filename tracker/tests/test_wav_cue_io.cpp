@@ -341,6 +341,25 @@ TEST_CASE("old project files without the field load with sampleSaveChoice 0") {
   INFO(projectFileError);
   REQUIRE(projectLoad(&loaded, "tests/test_v1_format.cnm") == 0);
   CHECK(loaded.sampleSaveChoice == 0);
+  CHECK(loaded.songRowLabel[0][0] == '\0');
+}
+
+TEST_CASE("Song row labels survive project save and load") {
+  const char* path = "build/tests/test_song_labels.cct";
+  Project saved, loaded;
+  projectInit(&saved);
+  projectInit(&loaded);
+  REQUIRE(projectLoad(&saved, "packaging/common/projects/gm-midi-demo.cct") == 0);
+  std::strcpy(saved.songRowLabel[0], "INTRO");
+  saved.song[0][0] = 1;
+  std::strcpy(saved.songRowLabel[7], "MAIN");
+  REQUIRE(projectSave(&saved, path) == 0);
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  CHECK(loaded.song[0][0] == 1);
+  CHECK(std::strcmp(loaded.songRowLabel[0], "INTRO") == 0);
+  CHECK(std::strcmp(loaded.songRowLabel[7], "MAIN") == 0);
+  CHECK(loaded.songRowLabel[8][0] == '\0');
+  std::remove(path);
 }
 
 TEST_CASE("out-of-range sampleSaveChoice clamps to 0 on load") {

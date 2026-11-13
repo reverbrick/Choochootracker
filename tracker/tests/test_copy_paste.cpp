@@ -14,6 +14,7 @@ struct SongClipboardFixture {
   SongClipboardFixture() {
     chipnomadState = state.get();
     projectInit(&state->project);
+    state->project.tracksCount = PROJECT_MAX_TRACKS;
     resetCopyBuffers();
   }
   ~SongClipboardFixture() {
@@ -74,6 +75,21 @@ TEST_CASE("Song copying an empty range still copies silence without shifting") {
   CHECK(song[4][1] == EMPTY_VALUE_16);
   CHECK(song[5][1] == EMPTY_VALUE_16);
   CHECK(song[6][1] == 8);
+}
+
+TEST_CASE("Whole Song row clipboard operations preserve labels; partial track copies do not") {
+  SongClipboardFixture fixture;
+  Project& project = fixture.state->project;
+  std::strcpy(project.songRowLabel[4], "BREAK");
+  project.song[4][0] = 12;
+  copySong(0, 4, PROJECT_MAX_TRACKS - 1, 4, 0);
+  CHECK(pasteSong(0, 8) == 1);
+  CHECK(std::strcmp(project.songRowLabel[8], "BREAK") == 0);
+
+  std::strcpy(project.songRowLabel[4], "DROP");
+  copySong(0, 4, 2, 4, 0);
+  CHECK(pasteSong(0, 10) == 1);
+  CHECK(project.songRowLabel[10][0] == '\0');
 }
 
 TEST_CASE("Song removes empty ranges at the top bottom and full length") {

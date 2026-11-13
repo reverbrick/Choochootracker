@@ -542,6 +542,7 @@ struct Project {
   // Main project data
   uint16_t song[PROJECT_MAX_LENGTH][PROJECT_MAX_TRACKS];
   uint8_t songHighlight[PROJECT_MAX_LENGTH][PROJECT_MAX_TRACKS];
+  char songRowLabel[PROJECT_MAX_LENGTH][PROJECT_SONG_LABEL_LENGTH + 1];
   Chain chains[PROJECT_MAX_CHAINS];
   Phrase phrases[PROJECT_MAX_PHRASES];
   Groove grooves[PROJECT_MAX_GROOVES];
