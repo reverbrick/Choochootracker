@@ -395,11 +395,12 @@ SUBCASE("cutoff modulation has quadratic musical depth") {
 
 SUBCASE("negative cutoff modulation lowers cutoff") {
   Modulation modulation = {.amount = -32};
-  PlaybackModState state = {.modulation = &modulation, .outValue = 8160};
+  // The modulation state already contains the signed amount, as Gate ENV does.
+  PlaybackModState state = {.modulation = &modulation, .outValue = -8160};
   CHECK(playbackModulateCutoff(1000, &state) == 768); // 4.5 semitones down
 
   modulation.amount = -127;
-  state.outValue = 32385;
+  state.outValue = -32385;
   CHECK(playbackModulateCutoff(10000, &state) == 156); // six octaves down
 }
 
