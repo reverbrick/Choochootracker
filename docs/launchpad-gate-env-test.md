@@ -47,6 +47,9 @@ envelope state. Voices rendered by one track share that track's slot output;
 each active Layer child instrument keeps its own modulation slots while
 receiving the parent track's gate events.
 
+GATE ENV starts at zero and remains closed until its selected performance gate
+is pressed. It does not run an attack automatically when an instrument starts.
+
 ## Separate Pak installation
 
 Build the `feature/external-gate-envelopes` ref with the repository's

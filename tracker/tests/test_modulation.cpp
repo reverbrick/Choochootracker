@@ -1664,6 +1664,11 @@ SUBCASE("Gate ENV gates independently of note events and retains ADSR per slot")
   PlaybackModState a{}, b{};
   playbackModInit(&a, &first);
   playbackModInit(&b, &second);
+  playbackModNext(&a);
+  playbackModNext(&b);
+  CHECK(a.outValue == 0);
+  CHECK(b.outValue == 0);
+  CHECK(a.step == 0xff);
   playbackModGate(&a, 1);
   playbackModGate(&b, 1);
   playbackModNext(&a);

@@ -353,11 +353,15 @@ void playbackModInit(PlaybackModState* state, Modulation* mod) {
   state->cachedP2 = GET_P2(state);
 
   // Additional initialization based on modulation type
-  if (GET_TYPE(state) == ModulationType::ADSR || GET_TYPE(state) == ModulationType::GateEnv) {
+  if (GET_TYPE(state) == ModulationType::ADSR) {
     // For ADSR, set initial values for Attack phase
     // Start from 0, target is full range (32385)
     state->data1 = 0;
     state->data2 = MOD_MAX_RANGE;
+  } else if (GET_TYPE(state) == ModulationType::GateEnv) {
+    // Unlike note-triggered ADSR, the external gate envelope remains closed
+    // until its first explicit gate-on event.
+    state->step = 0xff;
   } else if (GET_TYPE(state) == ModulationType::AHD) {
     // For AHD, set initial values for Attack phase
     // Start from 0, target is full range (32385)
