@@ -1371,10 +1371,11 @@ void appOnEvent(MainLoopEventData eventData) {
 #endif
     }
 #ifdef PORTMASTER_BUILD
-    // SDL_CONTROLLER_BUTTON_X is code 2. It is distinct from keyboard X and
-    // only consumed when the active Pak keymap leaves this physical button free.
+    // NextUI's TrimUI Player1 reports its physical X face button as gamepad
+    // code 3 (confirmed on the Brick). Keep this separate from keyboard X and
+    // preserve any user remapping of that controller input.
     if (!rawInputActive && currentScreen == &screenSong && value == keyUnmapped &&
-        eventData.data.input.deviceType == InputDeviceType::gamepad && eventData.data.input.code == 2) {
+        eventData.data.input.deviceType == InputDeviceType::gamepad && eventData.data.input.code == 3) {
       screenSongOpenRowLabelEditor();
       break;
     }
