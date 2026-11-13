@@ -68,6 +68,30 @@ Save regularly and keep backups of your projects.
 
 Bug reports, feedback, testing and contributions are welcome!
 
+## 🔀 Changes in the reverbrick fork
+
+This fork adds features that are not necessarily present in the
+[upstream ChooChooTracker repository](https://github.com/paiheulevrai/Choochootracker):
+
+- **Pattern-level BPM command:** the `BPM` tracker effect sets the global
+  playback tempo from a pattern row; value `00` leaves the tempo unchanged.
+- **Launchpad Mini MK3 control surface:** an opt-in setting enables the
+  Programmer Mode connection. On the Song/Scenes screen, the 8×8 grid launches
+  track chains, the right-side buttons launch scenes, the top buttons navigate
+  using the tracker's shared cursor and viewport, and LEDs show song and
+  playback state. Controller MIDI uses dedicated ports, separate from musical
+  MIDI and MIDI Learn.
+- **Mixer performance and GATE ENV prototype:** instrument modulation slots can
+  use an externally triggered ADSR-style `GATE ENV` source with Gate 1–4. The
+  current Mixer layout maps only its lower-left pad to Gate 1 on track 1; the
+  other performance pads are not yet assigned.
+
+Launchpad Song/Scenes operation and Programmer Mode MIDI input/output have been
+verified on a TrimUI Brick running NextUI. The Mixer gate's audible filter and
+send modulation remains experimental and is not claimed as hardware-verified.
+See the [Launchpad Mini MK3 notes](docs/launchpad-mini-mk3.md) and [GATE ENV
+test notes](docs/launchpad-gate-env-test.md) for details.
+
 ---
 
 ## 🚀 Quick start
