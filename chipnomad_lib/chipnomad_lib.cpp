@@ -196,6 +196,8 @@ class AudioCommandQueue {
         for (auto& child : state->playbackState.layerTracks[t]) refreshModulations(child);
     }
     state->audioProject = snapshot.project;
+    if (state->playbackState.bpmTickRateOverride > 0.0f)
+      state->audioProject.tickRate = state->playbackState.bpmTickRateOverride;
     for (auto& handle : snapshot.beads) handle = {};
     for (auto& handle : snapshot.vocoders) handle = {};
     projectSlots_[slot].state.store(kFree, std::memory_order_release);

@@ -757,6 +757,11 @@ void readPhraseRowDirect(PlaybackState* state, int trackIdx, PhraseRow* phraseRo
     } else if (fxType == fxSPD && (p->signedTrackSpeed || fxValue <= 0x10)) {
       track->speedRatio = fxValue;
       track->speedPhase = 0;
+    } else if (fxType == fxBPM && fxValue != 0) {
+      // BPM is encoded as a literal decimal value in the row's hexadecimal byte.
+      // 24 tracker ticks per beat: tickRate = BPM * 24 / 60.
+      state->bpmTickRateOverride = (float)fxValue * 0.4f;
+      p->tickRate = state->bpmTickRateOverride;
     } else if (fxType == fxSLE) {
       track->slewTicks = fxValue;
     } else if (!skipDelCheck && (fxType == fxDEL && fxValue != 0)) {
@@ -1853,6 +1858,7 @@ void playbackInit(PlaybackState* state, Project* project) {
   state->liveStickWasPlaying = 0;
   state->scaleRoot = project->scaleRoot;
   state->scalePreset = project->scalePreset;
+  state->bpmTickRateOverride = 0.0f;
   memset(state->midiCC, 0, sizeof(state->midiCC));
 
   initFXHandlers();

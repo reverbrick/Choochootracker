@@ -256,6 +256,8 @@ struct PlaybackState {
   uint8_t scaleRoot;
   ScalePreset scalePreset;
   uint8_t scaleFXCommandSeen;
+  // Sequencer BPM FX override; retained across project snapshots until playback is reinitialized.
+  float bpmTickRateOverride;
   uint8_t phraseBoundaryMask;
   uint8_t chainBoundaryMask;
   MidiCCRuntime midiCC[PROJECT_MAX_INSTRUMENTS][16];

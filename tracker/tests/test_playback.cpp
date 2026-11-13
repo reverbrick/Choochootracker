@@ -1049,4 +1049,19 @@ TEST_CASE_FIXTURE(PlaybackFixture, "SPD 01 doubles one track clock and persists"
   CHECK(state->playbackState.tracks[0].phraseRow == 2);
 }
 
+TEST_CASE_FIXTURE(PlaybackFixture, "BPM sets global tempo from a phrase row") {
+  PhraseRow row;
+  memset(&row, EMPTY_VALUE_8, sizeof(row));
+  row.fx[0].command = fxBPM;
+  row.fx[0].value = 120;
+
+  readPhraseRowDirect(&state->playbackState, 0, &row, 0);
+  CHECK(state->project.tickRate == doctest::Approx(48.0f));
+  CHECK(state->playbackState.bpmTickRateOverride == doctest::Approx(48.0f));
+
+  row.fx[0].value = 0;
+  readPhraseRowDirect(&state->playbackState, 0, &row, 0);
+  CHECK(state->project.tickRate == doctest::Approx(48.0f));
+}
+
 } // TEST_SUITE("playback")

@@ -262,6 +262,9 @@ enum FX : FXId {
   fxB80CF, // Bass808 filter cutoff
   fxB80RS, // Bass808 filter resonance
 
+  // Global tempo command. Appended to preserve existing project FX IDs.
+  fxBPM, // Set global tempo in BPM, 01-FF (00 is ignored)
+
   // Total count - must be last
   fxTotalCount
 };

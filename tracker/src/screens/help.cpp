@@ -406,6 +406,7 @@ const char* helpFXHint(const FXCell& fx, int isTable, uint8_t instrumentIdx) {
     case fxPRO: snprintf(buffer, bufferSize, "Probability %hhu%%", fx.value > 100 ? 100 : fx.value); break;
     case fxMOD: snprintf(buffer, bufferSize, "Modulo %hhu:%hhu", fx.value >> 4, fx.value & 15); break;
     case fxSPD: snprintf(buffer, bufferSize, "Track clock mode %02hX", fx.value); break;
+    case fxBPM: snprintf(buffer, bufferSize, "Global tempo %hhu BPM", fx.value); break;
     case fxSLE: snprintf(buffer, bufferSize, "Engine FX slew %hhu ticks", fx.value); break;
     case fxFBR: snprintf(buffer, bufferSize, "FM brightness %+d", fmBrightnessFromByte(fx.value)); break;
     case fxFFB:
@@ -573,6 +574,7 @@ static void initFxHelpText() {
   fxHelpText[fxPRO] = "Probability\n00-64 = 0-100 percent\nConditions on a row use AND";
   fxHelpText[fxMOD] = "Modulo condition\nAB triggers pass A of B\nExample 34 = 3:4";
   fxHelpText[fxSPD] = "Track playback speed\n00=x1, 01=x2, FF=/2\nPersists until next SPD";
+  fxHelpText[fxBPM] = "Global tempo\n01-FF sets BPM literally\n00 leaves tempo unchanged";
   fxHelpText[fxSLE] = "Engine FX Smoothing\n00 = immediate change\n01-FF = glide time in tracker ticks\nAffects continuous engine controls";
   fxHelpText[fxFBR] = "FM Brightness\n80 = preset; 00 darker; FF brighter\nRaises or lowers all modulator levels\nSLE smooths the change";
   fxHelpText[fxFET] = "FM Envelope Time\n80 = preset; 00 shorter; FF longer\nChanges all operator envelope rates\nExisting hold rates stay held\nSLE smooths the rate changes";
