@@ -1687,13 +1687,40 @@ SUBCASE("Gate ENV gates independently of note events and retains ADSR per slot")
   playbackModInit(&playback.tracks[0].note.modulation[0], &first);
   playbackModInit(&playback.tracks[0].note.modulation[1], &second);
   playbackModInit(&playback.tracks[1].note.modulation[0], &first);
+  playbackModInit(&playback.layerTracks[0][0].note.modulation[0], &second);
   playbackSetPerformanceGate(&playback, 0, 0, 1);
   CHECK(playback.performanceGates[0] == 1);
   CHECK(playback.tracks[0].note.modulation[0].gateHeld);
   CHECK(playback.tracks[0].note.modulation[1].gateHeld);
+  CHECK(playback.layerTracks[0][0].note.modulation[0].gateHeld);
   CHECK(!playback.tracks[1].note.modulation[0].gateHeld);
   playbackSetPerformanceGate(&playback, 0, 0, 0);
   CHECK(playback.performanceGates[0] == 0);
+}
+
+TEST_CASE("GATE ENV settings round trip without changing project format version") {
+  Project saved, loaded;
+  projectInit(&saved);
+  projectInit(&loaded);
+  saved.tracksCount = saved.chipsCount = 1;
+  saved.instruments[0].type = InstrumentType::AY1;
+  Modulation& mod = saved.instruments[0].modulation[0];
+  mod.type = ModulationType::GateEnv;
+  mod.destination = 1;
+  mod.amount = 80;
+  mod.p1 = 0; mod.p2 = 21; mod.p3 = 17; mod.p4 = 190; mod.p5 = 33;
+
+  const char* path = "build/tests/gate_env_roundtrip.cct";
+  REQUIRE(projectSave(&saved, path) == 0);
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  const Modulation& result = loaded.instruments[0].modulation[0];
+  CHECK(projectFileVersion == 12);
+  CHECK(result.type == ModulationType::GateEnv);
+  CHECK(result.destination == 1);
+  CHECK(result.amount == 80);
+  CHECK(result.p1 == 0); CHECK(result.p2 == 21); CHECK(result.p3 == 17);
+  CHECK(result.p4 == 190); CHECK(result.p5 == 33);
+  std::remove(path);
 }
 
 }
