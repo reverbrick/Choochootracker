@@ -404,6 +404,18 @@ SUBCASE("negative cutoff modulation lowers cutoff") {
   CHECK(playbackModulateCutoff(10000, &state) == 156); // six octaves down
 }
 
+SUBCASE("negative Gate ENV drives sample cutoff down") {
+  Modulation modulation = {.type = ModulationType::GateEnv, .destination = 7,
+    .amount = -128, .p1 = 0, .p2 = 0, .p3 = 0, .p4 = 192, .p5 = 0};
+  PlaybackModState state{};
+  playbackModInit(&state, &modulation);
+  playbackModGate(&state, 1);
+  playbackModNext(&state);
+  CHECK(state.outValue < 0);
+  CHECK(state.outValue == -24576);
+  CHECK(playbackModulateCutoff(20000, &state) == 831);
+}
+
 // Test ADSR full cycle
 SUBCASE("ADSR full cycle") {
   Modulation mod = {
