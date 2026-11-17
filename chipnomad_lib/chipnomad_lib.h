@@ -9,6 +9,9 @@
 #include "synth/instrument_eq.h"
 #include "utils.h"
 #include "stop_transition.h"
+extern "C" {
+#include "orca/vmio.h"
+}
 
 class BraidsVoice;
 class SampleVoice;
@@ -38,6 +41,21 @@ struct MidiRecordEvent;
 enum class MidiRecordMode : uint8_t;
 struct LinkClientState;
 class AudioMonitor;
+
+// Fixed embedded ORCA proof score state. Runtime-only: it is audio-owned and
+// deliberately is not part of Project or project serialization.
+struct OrcaTransportState {
+  Glyph grid[14];
+  Mark marks[14];
+  Oevent eventStorage[4];
+  Oevent_list events;
+  uint32_t frameNumber;
+  uint32_t trackerTicksSinceFrame;
+  uint64_t totalFramesExecuted;
+  uint32_t gateOffFrame;
+  uint8_t transportActive;
+  uint8_t gateActive;
+};
 
 constexpr int VOICE_OWNER_COUNT = PROJECT_MAX_VOICE_OWNERS;
 constexpr int AUDIO_INPUT_ROUTE_DELAY_FRAMES = 512;
@@ -100,6 +118,7 @@ struct ChipNomadState {
   // UI owns project; the audio callback reads only audioProject.
   Project audioProject;
   PlaybackState playbackState;
+  OrcaTransportState orcaTransport;
   SoundChip* chips[PROJECT_MAX_CHIPS];
   // Dedicated AY instances for Layer lanes. Normal owners remain null.
   SoundChip* layerAYChips[VOICE_OWNER_COUNT];

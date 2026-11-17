@@ -254,3 +254,105 @@ TEST_CASE("Orca-c MIDI duration drives the existing sample voice on tracker tick
   CHECK_FALSE(state->sampleVoices[0][0]->active());
   chipnomadDestroy(state);
 }
+
+TEST_CASE("embedded ORCA score follows song transport tempo stop and restart") {
+  auto* state = chipnomadCreate();
+  REQUIRE(state);
+  auto& project = state->project;
+  project.tickRate = 48.0f;
+  project.chipType = ChipType::AY;
+  project.chipsCount = 1;
+  project.tracksCount = projectGetTotalTracks(&project);
+  calculatePitchTableAY(&project);
+  project.song[0][0] = 0;
+  project.chains[0].rows[0].phrase = 0;
+  project.chains[0].rows[0].transpose = 0;
+  phraseClear(&project.phrases[0]); // Keep the tracker transport active and silent.
+
+  auto& instrument = project.instruments[1];
+  getInstrumentFunctions(InstrumentType::Sample).init(&instrument);
+  auto& sample = instrument.chip.sample;
+  sample.frameCount = 4096;
+  sample.sampleRate = 48000;
+  sample.channels = 1;
+  sample.data = static_cast<int16_t*>(std::malloc(sample.frameCount * sizeof(int16_t)));
+  REQUIRE(sample.data);
+  for (uint32_t i = 0; i < sample.frameCount; ++i)
+    sample.data[i] = static_cast<int16_t>(std::sin(i * 0.071) * 24000.0);
+  sample.loopMode = 1;
+  sample.attack = sample.decay = 0;
+  sample.sustain = 255;
+  sample.release = 8;
+
+  chipnomadInitChips(state, 48000, nullptr);
+  REQUIRE(chipnomadQueueProjectRefresh(state));
+  REQUIRE(chipnomadQueuePlaybackStartSong(state, 0, 0, 1));
+  float output[2000]{};
+  double energy = 0;
+  auto renderOneThousand = [&]() {
+    int rendered = chipnomadRender(state, output, 1000);
+    REQUIRE(rendered == 1000);
+    for (float value : output) energy += value * value;
+  };
+
+  // One queued song start is followed by the fixed ORCA score on master ticks.
+  for (int i = 0; i < 3; ++i) renderOneThousand();
+  REQUIRE(chipnomadGetPlaybackStatus(state)->transportPlaying);
+  REQUIRE(state->orcaTransport.totalFramesExecuted >= 1);
+  REQUIRE(state->orcaTransport.gateActive);
+  CHECK(state->orcaTransport.events.buffer == state->orcaTransport.eventStorage);
+  CHECK(state->orcaTransport.events.capacity == 4);
+  CHECK(state->playbackState.tracks[0].note.pitchBase == 48);
+  CHECK(state->playbackState.tracks[0].note.volume == 95);
+  REQUIRE(state->sampleVoices[0][0]);
+  CHECK(state->sampleVoices[0][0]->active());
+  CHECK(energy > 1e-5);
+
+  for (int i = 0; i < 6; ++i) renderOneThousand();
+  CHECK(state->orcaTransport.gateActive); // One ORCA frame after note-on.
+  for (int i = 0; i < 6; ++i) renderOneThousand();
+  CHECK_FALSE(state->orcaTransport.gateActive); // Duration 2 releases at frame 2.
+  CHECK_FALSE(state->playbackState.tracks[0].midiHeld);
+  CHECK_FALSE(state->sampleVoices[0][0]->active());
+
+  // Equal sample time produces twice as many ORCA frames when the master's
+  // tick rate doubles from 48 to 96 ticks/second.
+  const uint64_t before48 = state->orcaTransport.totalFramesExecuted;
+  for (int i = 0; i < 6; ++i) renderOneThousand();
+  const uint64_t steps48 = state->orcaTransport.totalFramesExecuted - before48;
+  CHECK(steps48 == 1);
+  project.tickRate = 96.0f;
+  REQUIRE(chipnomadQueueProjectRefresh(state));
+  const uint64_t before96 = state->orcaTransport.totalFramesExecuted;
+  for (int i = 0; i < 6; ++i) renderOneThousand();
+  const uint64_t steps96 = state->orcaTransport.totalFramesExecuted - before96;
+  CHECK(steps96 == 2);
+
+  // Stop releases the active ORCA gate, and a new transport start restores
+  // the score's initial bang and runs its first frame deterministically.
+  chipnomadQueuePlaybackStop(state);
+  for (int i = 0; i < 3 && chipnomadGetPlaybackStatus(state)->transportPlaying; ++i)
+    (void)chipnomadRender(state, output, 1000);
+  CHECK_FALSE(chipnomadGetPlaybackStatus(state)->transportPlaying);
+  CHECK_FALSE(state->orcaTransport.gateActive);
+  CHECK_FALSE(state->playbackState.tracks[0].midiHeld);
+
+  const uint64_t beforeRestart = state->orcaTransport.totalFramesExecuted;
+  REQUIRE(chipnomadQueuePlaybackStartSong(state, 0, 0, 1));
+  for (int i = 0; i < 3; ++i) renderOneThousand();
+  CHECK(state->orcaTransport.totalFramesExecuted == beforeRestart + 1);
+  CHECK(state->orcaTransport.frameNumber == 1);
+  CHECK(state->orcaTransport.grid[8] == '.'); // The bang was restored, then consumed once.
+  CHECK(state->orcaTransport.gateActive);
+  CHECK(state->orcaTransport.events.buffer == state->orcaTransport.eventStorage);
+  CHECK(state->orcaTransport.events.capacity == 4);
+
+  chipnomadQueuePlaybackStop(state);
+  for (int i = 0; i < 3 && chipnomadGetPlaybackStatus(state)->transportPlaying; ++i)
+    (void)chipnomadRender(state, output, 1000);
+  CHECK_FALSE(state->orcaTransport.gateActive);
+  for (int i = 0; i < 4 && state->sampleVoices[0][0]->active(); ++i)
+    (void)chipnomadRender(state, output, 1000);
+  CHECK_FALSE(state->sampleVoices[0][0]->active());
+  chipnomadDestroy(state);
+}

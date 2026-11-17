@@ -1,5 +1,6 @@
 #include "audio_monitor.h"
 #include "chipnomad_lib.h"
+#include "orca/base.h"
 #include <type_traits>
 #include "soundbank_fx.h"
 #include "chipnomad_lib_live_stick.h"
@@ -43,6 +44,13 @@
 #include <atomic>
 #include <cmath>
 #include <new>
+
+extern "C" {
+void orca_run(Glyph* __restrict gbuffer, Mark* __restrict mbuffer,
+              Usz height, Usz width, Usz tick_number,
+              Oevent_list* oevent_list, Usz random_seed);
+void mbuffer_clear(Mark* mbuffer, Usz height, Usz width);
+}
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1330,6 +1338,8 @@ ChipNomadState* chipnomadCreate(void) {
 
   memset(state, 0, sizeof(ChipNomadState));
   state->ownsProjectResources = 1;
+  state->orcaTransport.events.buffer = state->orcaTransport.eventStorage;
+  state->orcaTransport.events.capacity = 4;
   state->audioCommands = new AudioCommandQueue();
   state->midiRouter = midiRouterCreate();
   state->linkClient = linkClientCreate();
@@ -2088,6 +2098,89 @@ static void stopStandalonePreview(ChipNomadState* state) {
   state->monkPreview->kill();state->sidPreview->kill();state->fourOpPreview->kill();state->dx7Preview->kill();state->opllPreview->kill(); state->oplPreview->kill();state->simpleChipPreview->kill(); state->opllPreviewTrack = -1;
 }
 
+namespace {
+constexpr Usz kOrcaScoreHeight = 2;
+constexpr Usz kOrcaScoreWidth = 7;
+constexpr int kOrcaTrackerTicksPerFrame = 6; // 1/16 note at 24 PPQN.
+constexpr int kOrcaTrack = 0;
+constexpr uint8_t kOrcaInstrument = 1;
+constexpr Glyph kOrcaProofScore[kOrcaScoreHeight * kOrcaScoreWidth] = {
+  '.', '%', '0', '5', 'C', 'c', '2',
+  '.', '*', '.', '.', '.', '.', '.',
+};
+
+void orcaResetForTransportStart(OrcaTransportState* orca) {
+  memcpy(orca->grid, kOrcaProofScore, sizeof(kOrcaProofScore));
+  memset(orca->marks, 0, sizeof(orca->marks));
+  orca->events.count = 0;
+  orca->frameNumber = 0;
+  // The first simulation frame is executed on this start tick. Thereafter
+  // exactly six master tracker ticks elapse between ORCA frames.
+  orca->trackerTicksSinceFrame = kOrcaTrackerTicksPerFrame - 1;
+  orca->gateOffFrame = 0;
+  orca->gateActive = 0;
+}
+
+void orcaReleaseGateNow(ChipNomadState* state) {
+  OrcaTransportState* orca = &state->orcaTransport;
+  if (orca->gateActive && kOrcaTrack < state->audioProject.tracksCount) {
+    playbackMidiInput(&state->playbackState, kOrcaTrack, 0, kOrcaInstrument, 0);
+    // This stop/reset path runs on the audio thread before the tracker stop
+    // reset. Consume note-off now so playbackStop cannot erase it as pending.
+    playbackApplyPendingMidiInput(&state->playbackState);
+  }
+  orca->gateActive = 0;
+  orca->transportActive = 0;
+  orca->trackerTicksSinceFrame = 0;
+}
+
+void orcaRunTransportFrame(ChipNomadState* state) {
+  OrcaTransportState* orca = &state->orcaTransport;
+  if (orca->gateActive && orca->frameNumber >= orca->gateOffFrame) {
+    chipnomadDispatchMidiInputAudioOwned(state, kOrcaTrack, 0, kOrcaInstrument, 0);
+    orca->gateActive = 0;
+  }
+
+  orca->events.count = 0;
+  mbuffer_clear(orca->marks, kOrcaScoreHeight, kOrcaScoreWidth);
+  orca_run(orca->grid, orca->marks, kOrcaScoreHeight, kOrcaScoreWidth,
+           orca->frameNumber, &orca->events, 0x4f524341u);
+  for (Usz i = 0; i < orca->events.count; ++i) {
+    const Oevent& event = orca->events.buffer[i];
+    if (event.any.oevent_type != Oevent_type_midi_note) continue;
+    const Oevent_midi_note& note = event.midi_note;
+    if (note.channel != 0 || kOrcaTrack >= state->audioProject.tracksCount ||
+        state->audioProject.instruments[kOrcaInstrument].type != InstrumentType::Sample)
+      continue;
+    const unsigned midiPitch = 12u * note.octave + note.note;
+    if (midiPitch < 12 || midiPitch - 12 >= state->audioProject.pitchTable.length)
+      continue;
+    chipnomadDispatchMidiInputAudioOwned(state, kOrcaTrack,
+      static_cast<uint8_t>(midiPitch - 12), kOrcaInstrument, note.velocity);
+    orca->gateActive = 1;
+    orca->gateOffFrame = orca->frameNumber + (note.duration ? note.duration : 1);
+  }
+  ++orca->frameNumber;
+  ++orca->totalFramesExecuted;
+}
+
+void orcaAdvanceWithTransport(ChipNomadState* state) {
+  OrcaTransportState* orca = &state->orcaTransport;
+  if (!playbackTransportIsPlaying(&state->playbackState)) {
+    if (orca->transportActive) orcaReleaseGateNow(state);
+    return;
+  }
+  if (!orca->transportActive) {
+    orcaResetForTransportStart(orca);
+    orca->transportActive = 1;
+  }
+  if (++orca->trackerTicksSinceFrame >= kOrcaTrackerTicksPerFrame) {
+    orca->trackerTicksSinceFrame = 0;
+    orcaRunTransportFrame(state);
+  }
+}
+} // namespace
+
 static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
   const int wasPlaying = playbackIsPlaying(&state->playbackState);
   const int transportWasPlaying = playbackTransportIsPlaying(&state->playbackState);
@@ -2101,6 +2194,7 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
   // scheduling. A stop request cancels a held start (stop wins).
   if (state->audioCommands->takeStopRequest()) {
     state->audioCommands->cancelPendingStart();
+    orcaReleaseGateNow(state);
     chipnomadMidiPanic(state);
     playbackStop(&state->playbackState);
     state->monkPreview->kill();state->sidPreview->kill();state->fourOpPreview->kill();state->dx7Preview->kill();state->opllPreview->kill(); state->oplPreview->kill();state->simpleChipPreview->kill(); state->opllPreviewTrack = -1;
@@ -2138,8 +2232,12 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
   int enabled = chipnomadLiveStickIsEnabled();
   if (!enabled && chipnomadMotionRateResetPending()) enabled = 1;
   playbackUpdateLiveStickModulation(&state->playbackState, axes, enabled);
+  orcaAdvanceWithTransport(state);
   state->frameSampleCounter += state->sampleRate / state->audioProject.tickRate;
   int allTracksStopped = playbackNextFrame(state);
+  if (state->orcaTransport.transportActive &&
+      !playbackTransportIsPlaying(&state->playbackState))
+    orcaReleaseGateNow(state);
   state->audioCommands->recordMidiTick(state->playbackState, dueMicros);
   state->layerVoiceTrackMask |= state->playbackState.layerTrackMask;
   updateVoiceOwnerCount(state);
