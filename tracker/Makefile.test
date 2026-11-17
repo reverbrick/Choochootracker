@@ -135,7 +135,7 @@ ALL_COMPILE_SOURCES += tests/beads_lifetime.cpp
 # unchanged files stay cached between test runs.
 object_for = $(BUILD_DIR)/obj/$(subst ../,up/,$(basename $(1))).o
 OBJECTS := $(foreach source,$(ALL_SOURCES),$(call object_for,$(source)))
-ORCA_C_SOURCES = ../chipnomad_lib/orca/gbuffer.c ../chipnomad_lib/orca/sim.c ../chipnomad_lib/orca/vmio.c
+ORCA_C_SOURCES = ../chipnomad_lib/orca/field.c ../chipnomad_lib/orca/gbuffer.c ../chipnomad_lib/orca/sim.c ../chipnomad_lib/orca/vmio.c
 ORCA_OBJECTS := $(foreach source,$(ORCA_C_SOURCES),$(call object_for,$(source)))
 OBJECTS += $(ORCA_OBJECTS)
 MEASURE_OBJECTS := $(foreach source,$(MEASURE_SOURCES),$(call object_for,$(source)))

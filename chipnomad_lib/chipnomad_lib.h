@@ -42,17 +42,26 @@ enum class MidiRecordMode : uint8_t;
 struct LinkClientState;
 class AudioMonitor;
 
-// Fixed embedded ORCA proof score state. Runtime-only: it is audio-owned and
-// deliberately is not part of Project or project serialization.
+constexpr uint16_t ORCA_RUNTIME_MAX_WIDTH = 64;
+constexpr uint16_t ORCA_RUNTIME_MAX_HEIGHT = 64;
+constexpr size_t ORCA_RUNTIME_MAX_CELLS =
+  (size_t)ORCA_RUNTIME_MAX_WIDTH * ORCA_RUNTIME_MAX_HEIGHT;
+
+// Runtime-only ORCA score/interpreter state. It is audio-owned and deliberately
+// is not part of Project or project serialization.
 struct OrcaTransportState {
-  Glyph grid[14];
-  Mark marks[14];
-  Oevent eventStorage[4];
+  Glyph score[ORCA_RUNTIME_MAX_CELLS];
+  Glyph grid[ORCA_RUNTIME_MAX_CELLS];
+  Mark marks[ORCA_RUNTIME_MAX_CELLS];
+  Oevent eventStorage[ORCA_RUNTIME_MAX_CELLS];
   Oevent_list events;
+  uint16_t scoreWidth;
+  uint16_t scoreHeight;
   uint32_t frameNumber;
   uint32_t trackerTicksSinceFrame;
   uint64_t totalFramesExecuted;
   uint32_t gateOffFrame;
+  uint8_t scoreLoaded;
   uint8_t transportActive;
   uint8_t gateActive;
 };
@@ -301,6 +310,11 @@ int chipnomadQueueMidiInput(ChipNomadState* state, int track, uint8_t note, uint
 void chipnomadDispatchMidiInputAudioOwned(ChipNomadState* state, int track,
                                          uint8_t note, uint8_t instrument,
                                          uint8_t velocity);
+// Load a native Orca-c rectangular grid from path. Call outside the audio
+// callback. The parsed score is handed to the audio thread at a tick boundary.
+// On failure, an empty score is published so an older score cannot keep running.
+int chipnomadLoadOrcaScore(ChipNomadState* state, const char* path,
+                           char* error, size_t errorCapacity);
 int chipnomadConsumeMidiRecordEvent(ChipNomadState* state, MidiRecordEvent* event);
 int chipnomadGetMidiRecordOverflow(ChipNomadState* state);
 // Copies the bounded native patch into the existing audio command queue.

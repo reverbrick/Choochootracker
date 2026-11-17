@@ -16,6 +16,7 @@ void mbuffer_clear(Mark* mbuffer, Usz height, Usz width);
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 namespace {
@@ -258,6 +259,10 @@ TEST_CASE("Orca-c MIDI duration drives the existing sample voice on tracker tick
 TEST_CASE("embedded ORCA score follows song transport tempo stop and restart") {
   auto* state = chipnomadCreate();
   REQUIRE(state);
+  char scoreError[128]{};
+  REQUIRE(chipnomadLoadOrcaScore(state, "tests/fixtures/orca/native-midi.orca",
+                                 scoreError, sizeof(scoreError)));
+  CHECK(scoreError[0] == '\0');
   auto& project = state->project;
   project.tickRate = 48.0f;
   project.chipType = ChipType::AY;
@@ -301,7 +306,12 @@ TEST_CASE("embedded ORCA score follows song transport tempo stop and restart") {
   REQUIRE(state->orcaTransport.totalFramesExecuted >= 1);
   REQUIRE(state->orcaTransport.gateActive);
   CHECK(state->orcaTransport.events.buffer == state->orcaTransport.eventStorage);
-  CHECK(state->orcaTransport.events.capacity == 4);
+  CHECK(state->orcaTransport.events.capacity == ORCA_RUNTIME_MAX_CELLS);
+  CHECK(state->orcaTransport.scoreLoaded);
+  CHECK(state->orcaTransport.scoreWidth == 7);
+  CHECK(state->orcaTransport.scoreHeight == 2);
+  CHECK(state->orcaTransport.score[1] == '%');
+  CHECK(state->orcaTransport.score[8] == '*');
   CHECK(state->playbackState.tracks[0].note.pitchBase == 48);
   CHECK(state->playbackState.tracks[0].note.volume == 95);
   REQUIRE(state->sampleVoices[0][0]);
@@ -345,7 +355,15 @@ TEST_CASE("embedded ORCA score follows song transport tempo stop and restart") {
   CHECK(state->orcaTransport.grid[8] == '.'); // The bang was restored, then consumed once.
   CHECK(state->orcaTransport.gateActive);
   CHECK(state->orcaTransport.events.buffer == state->orcaTransport.eventStorage);
-  CHECK(state->orcaTransport.events.capacity == 4);
+  CHECK(state->orcaTransport.events.capacity == ORCA_RUNTIME_MAX_CELLS);
+
+  CHECK_FALSE(chipnomadLoadOrcaScore(state, "tests/fixtures/orca/no-such-score.orca",
+                                     scoreError, sizeof(scoreError)));
+  CHECK(std::string(scoreError).find("not found") != std::string::npos);
+  (void)chipnomadRender(state, output, 1000);
+  CHECK_FALSE(state->orcaTransport.scoreLoaded);
+  CHECK_FALSE(state->orcaTransport.gateActive);
+  CHECK_FALSE(state->playbackState.tracks[0].midiHeld);
 
   chipnomadQueuePlaybackStop(state);
   for (int i = 0; i < 3 && chipnomadGetPlaybackStatus(state)->transportPlaying; ++i)
@@ -354,5 +372,32 @@ TEST_CASE("embedded ORCA score follows song transport tempo stop and restart") {
   for (int i = 0; i < 4 && state->sampleVoices[0][0]->active(); ++i)
     (void)chipnomadRender(state, output, 1000);
   CHECK_FALSE(state->sampleVoices[0][0]->active());
+  chipnomadDestroy(state);
+}
+
+TEST_CASE("native ORCA score loader reports missing and malformed files and disables playback") {
+  auto* state = chipnomadCreate();
+  REQUIRE(state);
+  char error[160]{};
+  REQUIRE(chipnomadLoadOrcaScore(state, "tests/fixtures/orca/native-midi.orca",
+                                 error, sizeof(error)));
+  chipnomadInitChips(state, 48000, nullptr);
+  float output[512]{};
+  (void)chipnomadRender(state, output, 256);
+  CHECK(state->orcaTransport.scoreLoaded);
+
+  CHECK_FALSE(chipnomadLoadOrcaScore(state, "tests/fixtures/orca/does-not-exist.orca",
+                                     error, sizeof(error)));
+  CHECK(std::string(error).find("not found") != std::string::npos);
+  (void)chipnomadRender(state, output, 256);
+  CHECK_FALSE(state->orcaTransport.scoreLoaded);
+  CHECK(state->orcaTransport.totalFramesExecuted == 0);
+
+  CHECK_FALSE(chipnomadLoadOrcaScore(state, "tests/fixtures/orca/malformed-ragged.orca",
+                                     error, sizeof(error)));
+  CHECK(std::string(error).find("not a rectangle") != std::string::npos);
+  (void)chipnomadRender(state, output, 256);
+  CHECK_FALSE(state->orcaTransport.scoreLoaded);
+  CHECK(state->orcaTransport.totalFramesExecuted == 0);
   chipnomadDestroy(state);
 }

@@ -50,6 +50,7 @@ void orca_run(Glyph* __restrict gbuffer, Mark* __restrict mbuffer,
               Usz height, Usz width, Usz tick_number,
               Oevent_list* oevent_list, Usz random_seed);
 void mbuffer_clear(Mark* mbuffer, Usz height, Usz width);
+#include "orca/field.h"
 }
 #include <limits.h>
 #include <stdlib.h>
@@ -157,6 +158,58 @@ class AudioCommandQueue {
 
   int pushProject(const Project& project) {
     return publishProject(project);
+  }
+
+  int pushOrcaScore(const Glyph* cells, uint16_t width, uint16_t height) {
+    orcaDisableRequested_.store(0, std::memory_order_release);
+    int slot = findFree(orcaScoreSlots_);
+    if (slot < 0) return 0;
+    auto& snapshot = orcaScoreSlots_[slot].value;
+    snapshot.width = width;
+    snapshot.height = height;
+    snapshot.valid = cells && width && height;
+    if (snapshot.valid)
+      memcpy(snapshot.cells, cells, (size_t)width * height * sizeof(Glyph));
+    orcaScoreSlots_[slot].state.store(kPublished, std::memory_order_release);
+    int old = orcaScorePublished_.exchange(slot, std::memory_order_acq_rel);
+    if (old >= 0) releasePublished(orcaScoreSlots_, old);
+    return 1;
+  }
+
+  void requestOrcaDisable() {
+    orcaDisableRequested_.store(1, std::memory_order_release);
+  }
+
+  // Audio thread: consume a complete, bounded score snapshot. All parsing and
+  // allocation happened on the caller's thread before publication.
+  void applyOrcaScore(ChipNomadState* state) {
+    if (orcaDisableRequested_.exchange(0, std::memory_order_acq_rel)) {
+      int published = orcaScorePublished_.exchange(-1, std::memory_order_acq_rel);
+      if (published >= 0) releasePublished(orcaScoreSlots_, published);
+      disableOrcaRuntime(state);
+      return;
+    }
+    int slot = claim(orcaScoreSlots_, orcaScorePublished_);
+    if (slot < 0) return;
+    const auto& snapshot = orcaScoreSlots_[slot].value;
+    OrcaTransportState& runtime = state->orcaTransport;
+    if (runtime.gateActive && state->audioProject.tracksCount > 0) {
+      playbackMidiInput(&state->playbackState, 0, 0, 1, 0);
+      playbackApplyPendingMidiInput(&state->playbackState);
+    }
+    runtime.gateActive = 0;
+    runtime.transportActive = 0;
+    runtime.trackerTicksSinceFrame = 0;
+    runtime.frameNumber = 0;
+    runtime.events.count = 0;
+    runtime.scoreLoaded = snapshot.valid;
+    runtime.scoreWidth = snapshot.valid ? snapshot.width : 0;
+    runtime.scoreHeight = snapshot.valid ? snapshot.height : 0;
+    memset(runtime.score, 0, sizeof(runtime.score));
+    if (snapshot.valid)
+      memcpy(runtime.score, snapshot.cells,
+        (size_t)snapshot.width * snapshot.height * sizeof(Glyph));
+    orcaScoreSlots_[slot].state.store(kFree, std::memory_order_release);
   }
 
   int pushScale(uint8_t root, ScalePreset preset) {
@@ -498,6 +551,20 @@ class AudioCommandQueue {
   int renderBufferOverflow() const { return renderBufferOverflow_.load(std::memory_order_relaxed); }
 
  private:
+  static void disableOrcaRuntime(ChipNomadState* state) {
+    OrcaTransportState& runtime = state->orcaTransport;
+    if (runtime.gateActive && state->audioProject.tracksCount > 0) {
+      playbackMidiInput(&state->playbackState, 0, 0, 1, 0);
+      playbackApplyPendingMidiInput(&state->playbackState);
+    }
+    runtime.scoreLoaded = 0;
+    runtime.scoreWidth = runtime.scoreHeight = 0;
+    runtime.transportActive = runtime.gateActive = 0;
+    runtime.frameNumber = runtime.trackerTicksSinceFrame = runtime.gateOffFrame = 0;
+    runtime.events.count = 0;
+    memset(runtime.score, 0, sizeof(runtime.score));
+  }
+
   enum { kFree, kPublished, kReading };
   template <typename T> struct Slot { T value; std::atomic<int> state{kFree}; };
   struct Settings { uint64_t trackMask = ~UINT64_C(0); LoopRange loopRange{}; uint8_t loopDirty = 0; };
@@ -505,6 +572,12 @@ class AudioCommandQueue {
     Project project;
     BeadsPool::Handle beads[BeadsPool::capacity];
     VocoderPool::Handle vocoders[VOICE_OWNER_COUNT * 4];
+  };
+  struct OrcaScoreSnapshot {
+    Glyph cells[ORCA_RUNTIME_MAX_CELLS];
+    uint16_t width = 0;
+    uint16_t height = 0;
+    uint8_t valid = 0;
   };
   struct AudioCommand { uint8_t type; int a, b, c, d; uint64_t timestamp; PhraseRow row; InstrumentOPLL patch; InstrumentOPL opl; InstrumentSimpleChip simple; InstrumentDX7 dx7; InstrumentFourOp fourOp; InstrumentSID sid; InstrumentMonk monk; };
   // kStartPhraseRowFull is appended after upstream's preview commands so the
@@ -644,12 +717,15 @@ class AudioCommandQueue {
   VocoderPool::Handle activeVocoders_[VOICE_OWNER_COUNT * 4];
   float beadsSampleRate_ = 0;
   Slot<ProjectSnapshot> projectSlots_[kSlotCount];
+  Slot<OrcaScoreSnapshot> orcaScoreSlots_[kSlotCount];
   Slot<Settings> settingsSlots_[kSlotCount];
   Slot<PlaybackStatus> statusSlots_[kSlotCount];
   Slot<PendingStart> pendingStartSlots_[kSlotCount];
   Settings settingsDraft_;
   std::atomic<int> stopRequested_{0};
   std::atomic<int> projectPublished_{-1};
+  std::atomic<int> orcaScorePublished_{-1};
+  std::atomic<int> orcaDisableRequested_{0};
   std::atomic<int> settingsPublished_{-1};
   std::atomic<int> statusPublished_{-1};
   std::atomic<int> pendingStartPublished_{-1};
@@ -1339,7 +1415,7 @@ ChipNomadState* chipnomadCreate(void) {
   memset(state, 0, sizeof(ChipNomadState));
   state->ownsProjectResources = 1;
   state->orcaTransport.events.buffer = state->orcaTransport.eventStorage;
-  state->orcaTransport.events.capacity = 4;
+  state->orcaTransport.events.capacity = ORCA_RUNTIME_MAX_CELLS;
   state->audioCommands = new AudioCommandQueue();
   state->midiRouter = midiRouterCreate();
   state->linkClient = linkClientCreate();
@@ -1952,6 +2028,55 @@ void chipnomadDispatchMidiInputAudioOwned(ChipNomadState* state, int track,
   // updates voices and renders it without crossing the UI command queue.
   playbackMidiInput(&state->playbackState, track, note, instrument, velocity);
 }
+int chipnomadLoadOrcaScore(ChipNomadState* state, const char* path,
+                           char* error, size_t errorCapacity) {
+  auto report = [&](const char* message) {
+    if (state && state->audioCommands) state->audioCommands->requestOrcaDisable();
+    if (error && errorCapacity) snprintf(error, errorCapacity, "%s", message);
+    return 0;
+  };
+  if (!state || !state->audioCommands) return report("ORCA score: invalid tracker state");
+  if (!path || !*path) return report("ORCA score: no path configured");
+
+  // Bound parser memory use before invoking Orca-c's native loader. This is
+  // deliberately done on the caller thread, never in the audio callback.
+  FILE* probe = fopen(path, "rb");
+  if (!probe) return report("ORCA score: file not found or unreadable");
+  bool sizeReadable = fseek(probe, 0, SEEK_END) == 0;
+  long fileSize = sizeReadable ? ftell(probe) : -1;
+  fclose(probe);
+  constexpr long maxNativeScoreBytes =
+    (long)ORCA_RUNTIME_MAX_HEIGHT * (ORCA_RUNTIME_MAX_WIDTH + 2);
+  if (!sizeReadable || fileSize < 0)
+    return report("ORCA score: unable to inspect file size");
+  if (fileSize > maxNativeScoreBytes)
+    return report("ORCA score: file exceeds the 64x64 runtime grid limit");
+
+  Field field;
+  field_init(&field);
+  const Field_load_error loadError = field_load_file(path, &field);
+  if (loadError != Field_load_error_ok) {
+    char message[128];
+    snprintf(message, sizeof(message), "ORCA score: %s", field_load_error_string(loadError));
+    field_deinit(&field);
+    return report(message);
+  }
+  if (!field.width || !field.height) {
+    field_deinit(&field);
+    return report("ORCA score: file contains no grid rows");
+  }
+  if (field.width > ORCA_RUNTIME_MAX_WIDTH || field.height > ORCA_RUNTIME_MAX_HEIGHT) {
+    field_deinit(&field);
+    return report("ORCA score: grid exceeds the 64x64 runtime limit");
+  }
+  if (!state->audioCommands->pushOrcaScore(field.buffer, field.width, field.height)) {
+    field_deinit(&field);
+    return report("ORCA score: audio handoff is unavailable");
+  }
+  field_deinit(&field);
+  if (error && errorCapacity) error[0] = '\0';
+  return 1;
+}
 int chipnomadConsumeMidiRecordEvent(ChipNomadState* state, MidiRecordEvent* event) {
   return state && state->audioCommands && event ? state->audioCommands->midiRecording.consume(event) : 0;
 }
@@ -2099,19 +2224,14 @@ static void stopStandalonePreview(ChipNomadState* state) {
 }
 
 namespace {
-constexpr Usz kOrcaScoreHeight = 2;
-constexpr Usz kOrcaScoreWidth = 7;
 constexpr int kOrcaTrackerTicksPerFrame = 6; // 1/16 note at 24 PPQN.
 constexpr int kOrcaTrack = 0;
 constexpr uint8_t kOrcaInstrument = 1;
-constexpr Glyph kOrcaProofScore[kOrcaScoreHeight * kOrcaScoreWidth] = {
-  '.', '%', '0', '5', 'C', 'c', '2',
-  '.', '*', '.', '.', '.', '.', '.',
-};
 
 void orcaResetForTransportStart(OrcaTransportState* orca) {
-  memcpy(orca->grid, kOrcaProofScore, sizeof(kOrcaProofScore));
-  memset(orca->marks, 0, sizeof(orca->marks));
+  const size_t cells = (size_t)orca->scoreWidth * orca->scoreHeight;
+  memcpy(orca->grid, orca->score, cells * sizeof(Glyph));
+  memset(orca->marks, 0, cells * sizeof(Mark));
   orca->events.count = 0;
   orca->frameNumber = 0;
   // The first simulation frame is executed on this start tick. Thereafter
@@ -2142,8 +2262,8 @@ void orcaRunTransportFrame(ChipNomadState* state) {
   }
 
   orca->events.count = 0;
-  mbuffer_clear(orca->marks, kOrcaScoreHeight, kOrcaScoreWidth);
-  orca_run(orca->grid, orca->marks, kOrcaScoreHeight, kOrcaScoreWidth,
+  mbuffer_clear(orca->marks, orca->scoreHeight, orca->scoreWidth);
+  orca_run(orca->grid, orca->marks, orca->scoreHeight, orca->scoreWidth,
            orca->frameNumber, &orca->events, 0x4f524341u);
   for (Usz i = 0; i < orca->events.count; ++i) {
     const Oevent& event = orca->events.buffer[i];
@@ -2166,6 +2286,10 @@ void orcaRunTransportFrame(ChipNomadState* state) {
 
 void orcaAdvanceWithTransport(ChipNomadState* state) {
   OrcaTransportState* orca = &state->orcaTransport;
+  if (!orca->scoreLoaded) {
+    if (orca->transportActive) orcaReleaseGateNow(state);
+    return;
+  }
   if (!playbackTransportIsPlaying(&state->playbackState)) {
     if (orca->transportActive) orcaReleaseGateNow(state);
     return;
@@ -2186,6 +2310,7 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
   const int transportWasPlaying = playbackTransportIsPlaying(&state->playbackState);
   state->audioCommands->applyProject(state);
   state->playbackState.p = &state->audioProject;
+  state->audioCommands->applyOrcaScore(state);
   // Timed playback start: a queued start-at-time fires on the first
   // tick frame at or after its target host time. Uses the frame's
   // dueMicros (the wall-clock time of this tick's first sample) rather
