@@ -211,7 +211,8 @@ TEST_CASE("Orca-c MIDI duration drives the existing sample voice on tracker tick
   Oevent_list list{events.data(), 0, eventCapacity};
   const Oevent* const preallocatedBuffer = list.buffer;
   Usz noteOffFrame = SIZE_MAX;
-  std::vector<float> audio(1000, 0.0f);
+  // chipnomadRender takes frames and writes interleaved stereo samples.
+  std::vector<float> audio(1000 * 2, 0.0f);
   double energy = 0.0;
   unsigned emitted = 0;
   constexpr unsigned trackerTicksPerOrcaFrame = 6; // 1/16 note at 24 PPQN.
