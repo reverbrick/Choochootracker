@@ -32,6 +32,7 @@ endif
 
 # Compiler setup
 CC = $(TOOLCHAIN)/bin/$(TARGET)-clang++
+ORCA_CC = $(TOOLCHAIN)/bin/$(TARGET)-clang
 AR = $(TOOLCHAIN)/bin/llvm-ar
 STRIP = $(TOOLCHAIN)/bin/llvm-strip
 
@@ -50,13 +51,18 @@ XTRA_LIBS = -static-libstdc++ -L$(SDL2_LIB)/$(ARCH) -lSDL2 -lm -llog -landroid -
 ANDROID_CFLAGS = $(filter-out -flto,$(COMMON_CFLAGS))
 CFLAGS = $(ANDROID_CFLAGS) $(INCLUDES) $(SOURCES) $(ANDROID_SOURCES) $(XTRA_CFLAGS)
 OUTPUT = -o $(BUILD_DIR)/libchipnomad.so
+ORCA_OBJECTS = $(addprefix $(BUILD_DIR)/orca/,$(notdir $(ORCA_C_SOURCES:.c=.o)))
+
+$(BUILD_DIR)/orca/%.o: ../chipnomad_lib/orca/%.c Makefile.android Makefile.common
+	mkdir -p $(dir $@)
+	$(ORCA_CC) $(filter-out -std=c++17,$(ANDROID_CFLAGS)) $(INCLUDES) $(XTRA_CFLAGS) -std=c11 -c $< -o $@
 
 .PHONY: android android-lib android-apk android-bundle
 android: android-lib
 
-android-lib:
+android-lib: $(ORCA_OBJECTS)
 	mkdir -p $(BUILD_DIR)
-	$(CC) -shared $(CFLAGS) -x c -std=c11 $(ORCA_C_SOURCES) -x none $(XTRA_LIBS) $(OUTPUT)
+	$(CC) -shared $(CFLAGS) $(ORCA_OBJECTS) $(XTRA_LIBS) $(OUTPUT)
 	$(STRIP) $(BUILD_DIR)/libchipnomad.so
 
 .PHONY: android-apk

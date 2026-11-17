@@ -360,7 +360,7 @@ static int refreshDevices(void) {
 
 static void replaceProject(Project* replacement) {
   if (!replacement || !chipnomadState) return;
-  pause();
+  pauseAudio();
   chipnomadDiscardQueuedProject(chipnomadState);
   projectFree(&chipnomadState->project);
   chipnomadState->project = *replacement;
@@ -375,7 +375,7 @@ static void replaceProject(Project* replacement) {
 }
 
 static void reinitializeChips(void) {
-  pause();
+  pauseAudio();
   chipnomadInitChips(chipnomadState, aSampleRate, NULL);
   resume();
 }
@@ -392,7 +392,7 @@ static void ensureInstrumentVoices(InstrumentType type) {
 
 static int mutateProject(ProjectMutation* mutation, void* userdata) {
   if (!mutation || !chipnomadState) return 1;
-  pause();
+  pauseAudio();
   int result = mutation(userdata);
   chipnomadInitChips(chipnomadState, aSampleRate, NULL);
   resume();
@@ -451,13 +451,13 @@ static int getCpuLoadPercent(void) {
 }
 
 static void stopSamplePreviewLocked(void) {
-  pause();
+  pauseAudio();
   stopSamplePreview();
   resume();
 }
 
 static int previewSampleFile(const char* path, bool play) {
-  pause();
+  pauseAudio();
   stopSamplePreview();
   char error[64];
   int result = sampleLoadWav16(path, &samplePreview, error, sizeof(error));
@@ -478,7 +478,7 @@ static int previewSample(const char* path) { return previewSampleFile(path, true
 
 static int previewAYSampleFile(const char* path, const InstrumentAYSample* settings, bool play) {
   if (!settings) return 1;
-  pause();
+  pauseAudio();
   stopSamplePreview();
   uint16_t length, rate;
   WavLoadResult wavResult;
@@ -524,7 +524,7 @@ static int previewAYSample(const char* path, const InstrumentAYSample* settings)
 static int previewSCWFCommon(const char* path, const InstrumentSCWF* settings,
                              int oscillator, int byowtbl, bool play = true) {
   if (!settings || oscillator < 0 || oscillator > 1) return 1;
-  pause();
+  pauseAudio();
   // SCWF previews are intentionally toggled by START: the second press stops
   // the currently sounding oscillator/table without reloading the WAV.
   if (play && ((byowtbl && previewMode == PREVIEW_BYOWTBL) || (!byowtbl && previewMode == PREVIEW_SCWF))) {
@@ -588,7 +588,7 @@ static int preparePreviewFile(const char* path, const Instrument* instrument, in
 static int preparePreviewInstrument(const Project* source, int instrument, const Instrument* patch) {
   if (!source || instrument < 0 || instrument >= PROJECT_MAX_INSTRUMENTS ||
       source->instruments[instrument].type == InstrumentType::none) return 1;
-  pause();
+  pauseAudio();
   stopSamplePreview();
   ayPreviewState = chipnomadCreate();
   if (!ayPreviewState) { resume(); return 1; }

@@ -7,6 +7,7 @@ LIBS = $(COMMON_LIBS) platforms/sdl2
 OUTPUT_EXT = .html
 WEB_BUILD = build/web
 EMXX ?= em++
+EMCC ?= emcc
 # Release bundles must not carry local source paths in debug information.
 WEB_CFLAGS = $(filter-out -g,$(COMMON_CFLAGS)) $(INCLUDES) -DWEB_BUILD -DGAMEPAD_SUPPORT -fexceptions
 WEB_DATA_DIRS = $(filter-out projects,$(COMMON_DATA_DIRS))
@@ -28,12 +29,17 @@ WEB_LDFLAGS = -sUSE_SDL=2 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=256MB \
 SOURCES := $(filter-out platforms/sdl2/corelib_mainloop.cpp,$(SOURCES)) \
 	platforms/web/corelib_mainloop.cpp
 SOURCES += platforms/web/midi_backend_web.cpp
+ORCA_OBJECTS = $(addprefix $(WEB_BUILD)/orca/,$(notdir $(ORCA_C_SOURCES:.c=.o)))
+
+$(WEB_BUILD)/orca/%.o: ../chipnomad_lib/orca/%.c Makefile.web Makefile.common
+	mkdir -p $(dir $@)
+	$(EMCC) $(filter-out -std=c++17,$(WEB_CFLAGS)) -std=c11 -c $< -o $@
 
 .PHONY: web web-deploy
 
-web:
+web: $(ORCA_OBJECTS)
 	@mkdir -p $(WEB_BUILD)
-	$(EMXX) $(WEB_CFLAGS) $(SOURCES) -x c -std=c11 $(ORCA_C_SOURCES) -x none $(WEB_LDFLAGS) -o $(WEB_BUILD)/choochootracker.html \
+	$(EMXX) $(WEB_CFLAGS) $(SOURCES) $(ORCA_OBJECTS) $(WEB_LDFLAGS) -o $(WEB_BUILD)/choochootracker.html \
 	-sASSERTIONS=1 -sSTACK_SIZE=8388608 -sGL_ASSERTIONS=1
 	@cp ../web/index.html $(WEB_BUILD)/index.html
 	@cp ../web/privacy.html $(WEB_BUILD)/privacy.html
