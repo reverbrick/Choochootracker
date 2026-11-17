@@ -135,6 +135,9 @@ ALL_COMPILE_SOURCES += tests/beads_lifetime.cpp
 # unchanged files stay cached between test runs.
 object_for = $(BUILD_DIR)/obj/$(subst ../,up/,$(basename $(1))).o
 OBJECTS := $(foreach source,$(ALL_SOURCES),$(call object_for,$(source)))
+ORCA_C_SOURCES = ../chipnomad_lib/orca/gbuffer.c ../chipnomad_lib/orca/sim.c ../chipnomad_lib/orca/vmio.c
+ORCA_OBJECTS := $(foreach source,$(ORCA_C_SOURCES),$(call object_for,$(source)))
+OBJECTS += $(ORCA_OBJECTS)
 MEASURE_OBJECTS := $(foreach source,$(MEASURE_SOURCES),$(call object_for,$(source)))
 BENCHMARK_OBJECTS := $(foreach source,$(BENCHMARK_SOURCES),$(call object_for,$(source)))
 BEADS_LIFETIME_OBJECTS := $(foreach source,tests/beads_lifetime.cpp $(filter-out src/pattern_clone_utils.cpp,$(COMMON_SOURCES)) $(MOCK_SOURCES),$(call object_for,$(source)))
@@ -147,6 +150,12 @@ $(call object_for,$(1)): $(1) Makefile.test Makefile.native-chip-flags
 endef
 
 $(foreach source,$(ALL_COMPILE_SOURCES),$(eval $(call compile_source,$(source))))
+define compile_orca_c
+$(call object_for,$(1)): $(1) Makefile.test
+	@mkdir -p $$(dir $$@)
+	@$(CC) -std=c11 -Wall -g -O0 -DTEST -I../chipnomad_lib/orca -MMD -MP -c $$< -o $$@
+endef
+$(foreach source,$(ORCA_C_SOURCES),$(eval $(call compile_orca_c,$(source))))
 -include $(DEPS)
 
 # Default target: build and run all tests
