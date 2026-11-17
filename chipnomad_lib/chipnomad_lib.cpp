@@ -514,7 +514,7 @@ class AudioCommandQueue {
       if (pendingGates & (1u << gate)) playbackSetPerformanceGate(playback, gate / 4, gate % 4, 0);
   }
 
-  void publishStatus(const PlaybackState* playback, uint64_t linkPhaseTicks, uint64_t linkPhaseTickMicros) {
+  void publishStatus(const PlaybackState* playback, uint64_t linkPhaseTicks, uint64_t linkPhaseTickMicros, uint32_t orcaFrame) {
     int old = statusPublished_.exchange(-1, std::memory_order_acq_rel);
     if (old >= 0) releasePublished(statusSlots_, old);
     int slot = findFree(statusSlots_);
@@ -534,6 +534,7 @@ class AudioCommandQueue {
     status.transportPlaying = playbackTransportIsPlaying(playback);
     status.linkPhaseTicks = linkPhaseTicks;
     status.linkPhaseTickMicros = linkPhaseTickMicros;
+    status.orcaFrame = orcaFrame;
     statusSlots_[slot].state.store(kPublished, std::memory_order_release);
     statusPublished_.store(slot, std::memory_order_release);
   }
@@ -2077,6 +2078,14 @@ int chipnomadLoadOrcaScore(ChipNomadState* state, const char* path,
   if (error && errorCapacity) error[0] = '\0';
   return 1;
 }
+int chipnomadPublishOrcaGrid(ChipNomadState* state, const Glyph* cells, uint16_t width, uint16_t height) {
+  if (!state || !state->audioCommands || !cells || !width || !height ||
+      width > ORCA_RUNTIME_MAX_WIDTH || height > ORCA_RUNTIME_MAX_HEIGHT) return 0;
+  return state->audioCommands->pushOrcaScore(cells, width, height);
+}
+int chipnomadSetOrcaScoreEmpty(ChipNomadState* state) {
+  return state && state->audioCommands ? state->audioCommands->pushOrcaScore(NULL, 0, 0) : 0;
+}
 int chipnomadConsumeMidiRecordEvent(ChipNomadState* state, MidiRecordEvent* event) {
   return state && state->audioCommands && event ? state->audioCommands->midiRecording.consume(event) : 0;
 }
@@ -2404,7 +2413,7 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
     if (state->trackClipping[i] > 0) state->trackClipping[i]--;
   updateInsertValues(state);
   detectAYPitchConflicts(state);
-  state->audioCommands->publishStatus(&state->playbackState, state->linkPhaseTicks, dueMicros);
+  state->audioCommands->publishStatus(&state->playbackState, state->linkPhaseTicks, dueMicros, state->orcaTransport.frameNumber);
   if (playbackIsPlaying(&state->playbackState) && state->opllPreviewTrack >= 0)
     stopStandalonePreview(state);
   return allTracksStopped && state->opllPreviewTrack < 0 && !state->masterEffects->tailActive();

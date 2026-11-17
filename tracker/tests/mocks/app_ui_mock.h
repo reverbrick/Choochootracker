@@ -24,5 +24,6 @@ extern std::vector<int> mockAudioRestartResults;
 extern std::string mockOpenedAudioOutput;
 extern bool mockAudioOutputOpen;
 extern int mockMessageFrames;
+void mockFileBrowserConfirmSave(void);
 extern int mockAudioRefreshResult, mockAudioRefreshCalls;
 extern int mockAudioRestartNotificationFrames;

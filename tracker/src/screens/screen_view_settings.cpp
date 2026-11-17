@@ -97,6 +97,8 @@ static void viewStatic(void) {
 //   Simplified: patterns with adjustable length instead of chains/phrases
 //   Classic:    the LSDJ-style song -> chain -> phrase structure
 static const char* modeDescription(ViewMode mode) {
+  if (mode == ViewMode::orca)
+    return "EDIT+UP/DOWN selects ORCA. One shared score uses the project transport.";
   if (mode == ViewMode::classic && canonicalSimplifiedActive)
     return "Patterns over chains. Bars isolate automatically on edit; no view conversion.";
   if (mode == ViewMode::classic && grooveboxEditorActive)
@@ -170,7 +172,7 @@ static void drawDescriptionRow(void) {
   lastDescVisible = 1;
 }
 static void viewCursor(int, int row) {
-  if (row == 0) gfxCursor(23, 2, 10);       // "Classic"/"Simplified" (Mode)
+  if (row == 0) gfxCursor(23, 2, 10);       // mode name
   else if (row == 1) gfxCursor(23, 3, 10);  // "Classic"/"Simplified" (Default)
   else if (row == 2) gfxCursor(23, 4, 2);   // default length: 1..16
   else if (row == 3) gfxCursor(23, 5, 10);  // playhead marquee window
@@ -186,7 +188,7 @@ static void viewField(int, int row, CellState state) {
     // so without clearing, an earlier "Simplified" leaves stale "ied".
     gfxClearRect(23, 2, 10, 1);
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
-    gfxPrint(23, 2, p && p->viewMode == ViewMode::simplified ? "Simplified" :
+    gfxPrint(23, 2, p && p->viewMode == ViewMode::orca ? "ORCA" : p && p->viewMode == ViewMode::simplified ? "Simplified" :
       grooveboxEditorActive ? "Groovebox" : canonicalSimplifiedActive ? "Simplified" : "Classic");
   } else if (row == 1) {
     gfxSetFgColor(cs.textDefault);
@@ -232,21 +234,44 @@ static int viewEdit(int, int row, CellEditAction action) {
   if (!p) return 0;
 
   if (row == 0) {
+    if (action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
+      if (p->viewMode == ViewMode::orca) {
+        p->viewMode = p->orcaReturnViewMode;
+        canonicalSimplifiedActive = p->viewMode == ViewMode::simplified;
+        grooveboxEditorActive = 0;
+      } else {
+        p->orcaReturnViewMode = p->viewMode;
+        p->viewMode = ViewMode::orca;
+        grooveboxEditorActive = canonicalSimplifiedActive = 0;
+      }
+      projectModified = 1;
+      screenOrcaModeChanged();
+      screenFullRedraw(&viewData);
+      return 1;
+    }
     // Historical Pattern-format projects use the import converter once.
     if (action == CellEditAction::increase || action == CellEditAction::decrease) {
-      int current = grooveboxEditorActive ? 1 : canonicalSimplifiedActive ? 2 : 0;
+      int current = p->viewMode == ViewMode::orca ? 0 : grooveboxEditorActive ? 1 : canonicalSimplifiedActive ? 2 : 0;
       int next = (current + (action == CellEditAction::increase ? 1 : 2)) % 3;
       if (p->viewMode == ViewMode::simplified) {
         screenViewConvertSetup(&screenViewSettings, ViewMode::classic);
       } else {
-        grooveboxEditorActive = next == 1;
-        canonicalSimplifiedActive = next == 2;
+        if (p->viewMode == ViewMode::orca) {
+          p->viewMode = ViewMode::classic;
+          grooveboxEditorActive = next == 1;
+          canonicalSimplifiedActive = next == 2;
+          projectModified = 1;
+          screenOrcaModeChanged();
+        } else {
+          grooveboxEditorActive = next == 1;
+          canonicalSimplifiedActive = next == 2;
+        }
         screenFullRedraw(&viewData);
       }
       return 1;
     }
     if (action == CellEditAction::tap || action == CellEditAction::doubleTap) {
-      screenMessage(MESSAGE_TIME, "EDIT + LEFT/RIGHT to switch");
+      screenMessage(MESSAGE_TIME, "EDIT+UP/DOWN: ORCA; LEFT/RIGHT: views");
     }
     return 1;  // Always consume: nothing here may change the mode directly.
   }

@@ -16,6 +16,27 @@
 
 TEST_SUITE("project") {
 
+TEST_CASE("ORCA mode and external native score path round-trip without changing song data") {
+  Project source, loaded;
+  projectInitAY(&source);
+  projectInitAY(&loaded);
+  source.viewMode = ViewMode::orca;
+  source.orcaReturnViewMode = ViewMode::simplified;
+  std::snprintf(source.orcaScorePath, sizeof(source.orcaScorePath), "scores/live set.orca");
+  source.song[0][0] = 5;
+  source.chains[5].rows[0].phrase = 9;
+  const char* path = "build/tests/orca-mode-roundtrip.cct";
+  REQUIRE(projectSave(&source, path) == 0);
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  CHECK(loaded.viewMode == ViewMode::orca);
+  CHECK(loaded.orcaReturnViewMode == ViewMode::simplified);
+  CHECK(std::strcmp(loaded.orcaScorePath, source.orcaScorePath) == 0);
+  CHECK(loaded.song[0][0] == 5);
+  CHECK(loaded.chains[5].rows[0].phrase == 9);
+  projectFree(&source);
+  projectFree(&loaded);
+}
+
 TEST_CASE("MIDI CC maps continuous engine destinations to native values") {
   Project p;
   projectInit(&p);
@@ -126,9 +147,9 @@ TEST_CASE("table volumes retain their level when loading old projects") {
   std::ifstream input(path, std::ios::binary);
   std::string data((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
   input.close();
-  const size_t header = data.find("# ChooChooTracker Module 12.0");
+  const size_t header = data.find("# ChooChooTracker Module 13.0");
   REQUIRE(header != std::string::npos);
-  data.replace(header, std::strlen("# ChooChooTracker Module 12.0"), "# ChooChooTracker Module 7.0");
+  data.replace(header, std::strlen("# ChooChooTracker Module 13.0"), "# ChooChooTracker Module 7.0");
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   output.write(data.data(), data.size());
   output.close();
@@ -606,7 +627,7 @@ TEST_CASE("projects preserve syncLFO and slowLFO settings") {
   REQUIRE(projectSave(&saved, path) == 0);
   INFO(projectFileError);
   REQUIRE(projectLoad(&loaded, path) == 0);
-  CHECK(projectFileVersion == 12);
+  CHECK(projectFileVersion == 13);
   const Modulation& reloaded = loaded.instruments[0].modulation[2];
   CHECK(reloaded.type == mod.type);
   CHECK(reloaded.p3 == mod.p3);

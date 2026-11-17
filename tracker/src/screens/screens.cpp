@@ -69,7 +69,7 @@ void drawScreenMap() {
   if (currentScreen == &screenMixer || (currentScreen == &screenInsertFX && screenInsertFXIsMaster())) {
     gfxPrint(mixerX, smY, "R");
     gfxPrint(mixerX, smY + 2, "D");
-  } else if (currentScreen == &screenSong || projectScreen || currentScreen == &screenSettings) {
+  } else if (currentScreen == &screenSong || currentScreen == &screenOrca || projectScreen || currentScreen == &screenSettings) {
     gfxPrint(songX, smY, "P");
   } else if (currentScreen == &screenPhrase || currentScreen == &screenGroove) {
     gfxPrint(37, smY, "G");
@@ -84,7 +84,7 @@ void drawScreenMap() {
   }
 
   // Show Settings below Song
-  if (currentScreen == &screenSong || projectScreen || currentScreen == &screenSettings) {
+  if (currentScreen == &screenSong || currentScreen == &screenOrca || projectScreen || currentScreen == &screenSettings) {
     gfxPrint(songX, smY + 2, "S");
   }
 
@@ -93,7 +93,7 @@ void drawScreenMap() {
   if (currentScreen == &screenMixer || (currentScreen == &screenInsertFX && screenInsertFXIsMaster())) {
     int page = screenMixerGetPage();
     gfxPrint(mixerX, smY + (page == 1 ? 0 : page == 2 ? 2 : 1), page == 1 ? "R" : page == 2 ? "D" : "M");
-  } else if (currentScreen == &screenSong) {
+  } else if (currentScreen == &screenSong || currentScreen == &screenOrca) {
     gfxPrint(songX, smY + 1, "S");
   } else if (currentScreen == &screenChain) {
     gfxPrint(36, smY + 1, "C");
@@ -121,6 +121,8 @@ void drawScreenMap() {
 }
 
 void screenSetup(const AppScreen* screen, int input) {
+  if (screen == &screenSong && chipnomadState && chipnomadState->project.viewMode == ViewMode::orca)
+    screen = &screenOrca;
   if (canonicalSimplifiedActive && chipnomadState &&
       chipnomadState->project.viewMode == ViewMode::classic && screen == &screenChain)
     screen = &screenPhrase;

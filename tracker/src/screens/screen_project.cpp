@@ -145,7 +145,8 @@ int projectLoadFromPath(const char* path) {
   if (loadResult == 0) {
     audioManager.replaceProject(&replacement);
     grooveboxEditorActive = false;
-    canonicalSimplifiedActive = legacySimplified || appSettings.defaultViewMode == 1;
+    canonicalSimplifiedActive = replacement.viewMode != ViewMode::orca &&
+      (legacySimplified || appSettings.defaultViewMode == 1);
     autosaveLoadFailed = 0;
     projectModified = 0; // Clear modified flag after loading
 
@@ -157,6 +158,7 @@ int projectLoadFromPath(const char* path) {
 
     // Reset all screen states (including song position)
     screensInitAll();
+    screenOrcaProjectLoaded();
     // Clear FX states for all tracks
     // TODO: Make it a cleaner solution and have it somewhere in chipnomad_lib
     for (int i = 0; i < PROJECT_MAX_TRACKS; i++) {

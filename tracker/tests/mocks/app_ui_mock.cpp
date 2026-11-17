@@ -138,11 +138,32 @@ void fileBrowserSetup(const char* title, const char* extension, const char*,
   mockBrowserExtension = extension;
 }
 
-void fileBrowserSetupFolderMode(const char* title, const char*, const char*,
-                                const char* extension, void (*)(const char*),
+static void (*mockFolderSaveCallback)(const char*);
+static char mockSaveFolder[1024];
+static char mockSaveName[128];
+static char mockSavePath[2048];
+static int mockSavePathReady;
+void fileBrowserSetupFolderMode(const char* title, const char* folder, const char* filename,
+                                const char* extension, void (*callback)(const char*),
                                 void (*)(void)) {
   mockBrowserTitle = title;
   mockBrowserExtension = extension;
+  mockFolderSaveCallback = callback;
+  snprintf(mockSaveFolder, sizeof(mockSaveFolder), "%s", folder ? folder : "");
+  snprintf(mockSaveName, sizeof(mockSaveName), "%s", filename ? filename : "");
+}
+int fileBrowserGetSavePath(char* outputPath, int outputPathSize) {
+  if (!outputPath || outputPathSize <= 0 || !mockSavePathReady) return 0;
+  snprintf(outputPath, (size_t)outputPathSize, "%s", mockSavePath);
+  return 1;
+}
+void mockFileBrowserConfirmSave(void) {
+  if (!mockFolderSaveCallback) return;
+  snprintf(mockSavePath, sizeof(mockSavePath), "%s/%s%s", mockSaveFolder,
+           mockSaveName, mockBrowserExtension ? mockBrowserExtension : "");
+  mockSavePathReady = 1;
+  mockFolderSaveCallback(mockSaveFolder);
+  mockSavePathReady = 0;
 }
 
 int instrumentCommonColumnCount(int) { return 1; }

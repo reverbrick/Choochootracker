@@ -437,6 +437,7 @@ struct Pattern {
 enum class ViewMode : uint8_t {
   classic    = 0,
   simplified = 1,
+  orca       = 2,
 };
 
 // PlayheadMode controls how the playhead behaves in simplified view:
@@ -553,13 +554,17 @@ struct Project {
   // viewMode controls how song[row][track] is interpreted:
   //   classic    → cell is a chain index (chains[])
   //   simplified → cell is a pattern index (patterns[])
-  // The view mode is chosen when the project is created and is immutable
-  // afterwards (conversion between modes is deferred).
+  // The active sequencing view is stored in the project. Classic and
+  // Simplified share the tracker song data; ORCA uses its external score.
   //
   // chainToPatternMap[c] / patternToChainMap[p] record a bidirectional
   // mapping (used by the deferred conversion machinery). EMPTY_VALUE_16 in
   // either map means "no counterpart yet".
   ViewMode viewMode;
+  // External native Orca-c score path, relative to the project directory.
+  char orcaScorePath[256];
+  // Sequencing view to restore after leaving ORCA (Classic/Simplified).
+  ViewMode orcaReturnViewMode;
   Pattern patterns[PROJECT_MAX_PATTERNS];
   uint16_t chainToPatternMap[PROJECT_MAX_CHAINS];
   uint16_t patternToChainMap[PROJECT_MAX_PATTERNS];

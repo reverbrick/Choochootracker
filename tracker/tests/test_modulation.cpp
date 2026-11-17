@@ -1748,7 +1748,7 @@ SUBCASE("GATE ENV settings round trip without changing project format version") 
   resetPeekConsume();
   REQUIRE_MESSAGE(projectLoad(&loaded, path) == 0, projectFileError);
   const Modulation& result = loaded.instruments[0].modulation[0];
-  CHECK(projectFileVersion == 12);
+  CHECK(projectFileVersion == 13);
   CHECK(result.type == ModulationType::GateEnv);
   CHECK(result.destination == 1);
   CHECK(result.amount == 80);

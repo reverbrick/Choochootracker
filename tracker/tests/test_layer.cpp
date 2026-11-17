@@ -558,7 +558,7 @@ TEST_CASE("Layer project and preset preserve slot references") {
   const char* song = "build/tests/layer.cct";
   REQUIRE(projectSave(saved.get(), song) == 0);
   REQUIRE(projectLoad(loaded.get(), song) == 0);
-  CHECK(projectFileVersion == 12);
+  CHECK(projectFileVersion == 13);
   CHECK(loaded->instruments[4].type == InstrumentType::Layer);
   for (int i = 0; i < INSTRUMENT_LAYER_COUNT; ++i) {
     CHECK(loaded->instruments[4].chip.layer.entries[i].instrument == entries[i].instrument);

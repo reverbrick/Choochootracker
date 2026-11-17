@@ -621,6 +621,12 @@ void fileBrowserSetPath(const char* path) {
   fileBrowserRefresh();
 }
 
+int fileBrowserGetSavePath(char* outputPath, int outputPathSize) {
+  if (!outputPath || outputPathSize <= 0 || !pendingSavePath[0]) return 0;
+  snprintf(outputPath, (size_t)outputPathSize, "%s", pendingSavePath);
+  return 1;
+}
+
 // AppScreen interface
 
 static void setup(int input) {

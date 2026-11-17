@@ -27,7 +27,7 @@
 
 // Shared state
 char projectFileError[41];
-int projectFileVersion = 12;  // Default to current version
+int projectFileVersion = 13;  // Default to current version
 static char chipNames[][16] = { "AY8910" };
 
 // Peek/consume implementation - single global buffer (ChipNomad is single-threaded)
@@ -916,7 +916,9 @@ static int projectLoadInternal(FILE* file, Project* project) {
 
   // Detect version
   if (strlen(version) > 0) {
-    if (strncmp(version, " 12.0", 5) == 0) {
+    if (strncmp(version, " 13.0", 5) == 0) {
+      projectFileVersion = 13;
+    } else if (strncmp(version, " 12.0", 5) == 0) {
       projectFileVersion = 12;
     } else if (strncmp(version, " 11.0", 5) == 0) {
       projectFileVersion = 11;
@@ -991,8 +993,32 @@ static int projectLoadInternal(FILE* file, Project* project) {
   if (line && strncmp(line, "- View mode:", 12) == 0) {
     int vm = 0;
     if (sscanf(line, "- View mode: %d", &vm) == 1) {
-      p.viewMode = (vm == 1) ? ViewMode::simplified : ViewMode::classic;
+      p.viewMode = vm == 2 ? ViewMode::orca : (vm == 1 ? ViewMode::simplified : ViewMode::classic);
     }
+    consumeLine(file);
+    line = peekLine(file);
+    if (line == NULL) return 1;
+  }
+
+  line = peekLine(file);
+  if (line && strncmp(line, "- ORCA score:", 13) == 0) {
+    const char* value = line + 13;
+    while (*value == ' ' || *value == '\t') ++value;
+    size_t length = strcspn(value, "\r\n");
+    if (length < sizeof(p.orcaScorePath)) {
+      memcpy(p.orcaScorePath, value, length);
+      p.orcaScorePath[length] = 0;
+    }
+    consumeLine(file);
+    line = peekLine(file);
+    if (line == NULL) return 1;
+  }
+
+  line = peekLine(file);
+  if (line && strncmp(line, "- ORCA return view:", 19) == 0) {
+    int mode = 0;
+    if (sscanf(line, "- ORCA return view: %d", &mode) == 1)
+      p.orcaReturnViewMode = mode == 1 ? ViewMode::simplified : ViewMode::classic;
     consumeLine(file);
     line = peekLine(file);
     if (line == NULL) return 1;
@@ -1879,7 +1905,7 @@ static int projectSaveAYWavetables(FILE* file, Project* project) {
 
 static int projectSaveInternal(FILE* file, Project* project) {
   // Format 11 marks table volumes as 00-7F. Older files use 00-0F.
-  fprintf(file, "# ChooChooTracker Module 12.0\n\n");
+  fprintf(file, "# ChooChooTracker Module 13.0\n\n");
 
   fprintf(file, "- Title: %s\n", project->title);
   fprintf(file, "- Author: %s\n", project->author);
@@ -1887,7 +1913,10 @@ static int projectSaveInternal(FILE* file, Project* project) {
   fprintf(file, "- Frame rate: %f\n", project->tickRate);
   fprintf(file, "- Chips count: %d\n", project->chipsCount);
   // Simplified view + playhead behaviour (old files: absent → classic defaults)
-  fprintf(file, "- View mode: %d\n", project->viewMode == ViewMode::simplified ? 1 : 0);
+  fprintf(file, "- View mode: %d\n", project->viewMode == ViewMode::orca ? 2 : project->viewMode == ViewMode::simplified ? 1 : 0);
+  if (project->orcaScorePath[0]) fprintf(file, "- ORCA score: %s\n", project->orcaScorePath);
+  if (project->viewMode == ViewMode::orca)
+    fprintf(file, "- ORCA return view: %d\n", project->orcaReturnViewMode == ViewMode::simplified ? 1 : 0);
   fprintf(file, "- Playhead mode: %d\n", project->playheadMode == PlayheadMode::followPattern ? 1 : 0);
   fprintf(file, "- Track inserts: 1,8,2\n");
   for (int t = 0; t < PROJECT_MAX_TRACKS; ++t) for (int slot = 0; slot < 2; ++slot) {

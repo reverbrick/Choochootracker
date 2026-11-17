@@ -4,6 +4,8 @@
 #include "app_ui_mock.h"
 #include "project_utils.h"
 #include <cstring>
+#include <cstdio>
+#include <fstream>
 #include "selection_popup.h"
 #include "copy_paste.h"
 
@@ -437,6 +439,71 @@ TEST_CASE_FIXTURE(GrooveboxUIFixture, "Groovebox view entry includes canonical S
   CHECK(track == 2);
   CHECK(bar == 8);
   screenGrooveboxAfterConversion.fullRedraw();
+}
+
+TEST_CASE_FIXTURE(GrooveboxUIFixture, "ORCA mode is a project view and preserves tracker song data") {
+  auto& p = chipnomadState->project;
+  p.viewMode = ViewMode::simplified;
+  p.song[0][0] = 3;
+  p.chains[3].rows[0].phrase = 7;
+  auto songBefore = p.song[0][0];
+  auto phraseBefore = p.chains[3].rows[0].phrase;
+  projectModified = 0;
+  screenViewSettings.setup(0);
+  REQUIRE(mockScreenData != nullptr);
+  mockScreenData->onEdit(0, 0, CellEditAction::increaseBig);
+  CHECK(p.viewMode == ViewMode::orca);
+  CHECK(projectModified);
+  CHECK(p.song[0][0] == songBefore);
+  CHECK(p.chains[3].rows[0].phrase == phraseBefore);
+  CHECK(currentScreen == &screenOrca);
+  mockScreenData->onEdit(0, 0, CellEditAction::increaseBig);
+  CHECK(p.viewMode == ViewMode::simplified);
+  CHECK(p.song[0][0] == songBefore);
+  CHECK(p.chains[3].rows[0].phrase == phraseBefore);
+}
+
+TEST_CASE_FIXTURE(GrooveboxUIFixture, "ORCA grid navigation and character entry edit the Orca-c grid") {
+  chipnomadState->project.viewMode = ViewMode::orca;
+  std::snprintf(appSettings.projectPath, sizeof(appSettings.projectPath), "build/tests");
+  std::snprintf(appSettings.projectFilename, sizeof(appSettings.projectFilename), "missing-orca-test");
+  screenOrca.setup(0);
+  CHECK(std::strcmp(screenGetActiveMessage(), "ORCA: Score not found") == 0);
+  REQUIRE(screenOrcaGetCell(0, 0) == '.');
+  screenOrca.onInput(1, keyEdit, 1);
+  screenOrca.onInput(1, keyRight, 1); // '.' -> '%' in the ORCA character set
+  screenOrca.onInput(1, keyEdit, 1);
+  CHECK(screenOrcaGetCell(0, 0) == '%');
+  screenOrca.onInput(1, keyRight, 1);
+  screenOrca.onInput(1, keyDown, 1);
+  int x = -1, y = -1;
+  screenOrcaGetCursor(&x, &y);
+  CHECK(x == 1);
+  CHECK(y == 1);
+  screenOrca.onInput(1, keyEdit | keyOpt, 1);
+  CHECK(screenOrcaGetCell(1, 1) == '.');
+}
+
+TEST_CASE_FIXTURE(GrooveboxUIFixture, "ORCA score saves in native text and reloads with the edited grid") {
+  chipnomadState->project.viewMode = ViewMode::orca;
+  chipnomadState->project.orcaReturnViewMode = ViewMode::classic;
+  std::snprintf(appSettings.projectPath, sizeof(appSettings.projectPath), "build/tests");
+  std::snprintf(appSettings.projectFilename, sizeof(appSettings.projectFilename), "orca-editor-roundtrip");
+  std::snprintf(chipnomadState->project.orcaScorePath,
+    sizeof(chipnomadState->project.orcaScorePath), "orca-editor-roundtrip.orca");
+  std::remove("build/tests/orca-editor-roundtrip.orca");
+  screenOrca.setup(0);
+  screenOrca.onInput(1, keyEdit, 1);
+  screenOrca.onInput(1, keyRight, 1);
+  screenOrca.onInput(1, keyEdit, 1);
+  REQUIRE(screenOrcaGetCell(0, 0) == '%');
+  screenOrca.onInput(1, keyOpt, 1);
+  REQUIRE(std::strcmp(mockBrowserTitle, "SAVE ORCA SCORE") == 0);
+  mockFileBrowserConfirmSave();
+  CHECK(std::ifstream("build/tests/orca-editor-roundtrip.orca").good());
+  screenOrcaProjectLoaded();
+  CHECK(screenOrcaGetCell(0, 0) == '%');
+  std::remove("build/tests/orca-editor-roundtrip.orca");
 }
 
 TEST_CASE("Groovebox resolves canonical bars without altering the project") {

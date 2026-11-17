@@ -104,6 +104,7 @@ struct PlaybackStatus {
   // without racing the audio callback.
   uint64_t linkPhaseTicks;
   uint64_t linkPhaseTickMicros;
+  uint32_t orcaFrame;
 };
 class MasterEffects;
 
@@ -315,6 +316,9 @@ void chipnomadDispatchMidiInputAudioOwned(ChipNomadState* state, int track,
 // On failure, an empty score is published so an older score cannot keep running.
 int chipnomadLoadOrcaScore(ChipNomadState* state, const char* path,
                            char* error, size_t errorCapacity);
+int chipnomadPublishOrcaGrid(ChipNomadState* state, const Glyph* cells,
+                             uint16_t width, uint16_t height);
+int chipnomadSetOrcaScoreEmpty(ChipNomadState* state);
 int chipnomadConsumeMidiRecordEvent(ChipNomadState* state, MidiRecordEvent* event);
 int chipnomadGetMidiRecordOverflow(ChipNomadState* state);
 // Copies the bounded native patch into the existing audio command queue.

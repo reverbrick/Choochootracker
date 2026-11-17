@@ -1908,7 +1908,8 @@ int playbackIsPlaying(PlaybackState* state) {
 int playbackTransportIsPlaying(const PlaybackState* state) {
   for (int t = 0; t < state->p->tracksCount; ++t) {
     const auto mode = state->tracks[t].mode;
-    if (mode != PlaybackMode::none && mode != PlaybackMode::stopped && mode != PlaybackMode::phraseRow)
+    if (mode != PlaybackMode::none && mode != PlaybackMode::stopped &&
+        (mode != PlaybackMode::phraseRow || state->p->viewMode == ViewMode::orca))
       return 1;
   }
   return 0;
@@ -1943,6 +1944,20 @@ void playbackStartSong(PlaybackState* state, int songRow, int chainRow, int loop
   state->scalePreset = state->p->scalePreset;
 
   Project* p = state->p;
+
+  // ORCA owns the song screen and uses the tracker transport as its clock.
+  // Keep a clock-owning phrase-row track alive without advancing classic song
+  // data, so an empty Song grid still starts/stops the shared transport.
+  if (p->viewMode == ViewMode::orca && p->tracksCount > 0) {
+    PlaybackTrackState* clockTrack = &state->tracks[0];
+    resetTrack(state, 0);
+    clockTrack->mode = PlaybackMode::phraseRow;
+    clockTrack->songRow = 0;
+    clockTrack->chainRow = 0;
+    clockTrack->phraseRow = 0;
+    clockTrack->loop = 1;
+    return;
+  }
 
   for (int trackIdx = 0; trackIdx < p->tracksCount; trackIdx++) {
     PlaybackTrackState* track = &state->tracks[trackIdx];

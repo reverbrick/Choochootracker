@@ -265,14 +265,12 @@ TEST_CASE("embedded ORCA score follows song transport tempo stop and restart") {
   CHECK(scoreError[0] == '\0');
   auto& project = state->project;
   project.tickRate = 48.0f;
+  project.viewMode = ViewMode::orca;
   project.chipType = ChipType::AY;
   project.chipsCount = 1;
   project.tracksCount = projectGetTotalTracks(&project);
   calculatePitchTableAY(&project);
-  project.song[0][0] = 0;
-  project.chains[0].rows[0].phrase = 0;
-  project.chains[0].rows[0].transpose = 0;
-  phraseClear(&project.phrases[0]); // Keep the tracker transport active and silent.
+  project.song[0][0] = EMPTY_VALUE_16; // ORCA transport must start with an empty Song grid.
 
   auto& instrument = project.instruments[1];
   getInstrumentFunctions(InstrumentType::Sample).init(&instrument);
