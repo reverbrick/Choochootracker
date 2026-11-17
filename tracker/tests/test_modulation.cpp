@@ -3,6 +3,8 @@
 #include "../../chipnomad_lib/playback.h"
 #include "../../chipnomad_lib/project_io_common.h"
 #include <initializer_list>
+#include <cstring>
+#include <cstdio>
 #include <string.h>
 #include <stdio.h>
 

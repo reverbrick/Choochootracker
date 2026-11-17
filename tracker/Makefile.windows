@@ -32,7 +32,8 @@ TARGET = $(BUILD)/choochootracker$(OUTPUT_EXT)
 OUTPUT = -o $(BUILD)/choochootracker$(OUTPUT_EXT)
 
 object_for = $(BUILD)/obj/$(subst ../,up/,$(basename $(1))).o
-OBJECTS := $(foreach source,$(SOURCES),$(call object_for,$(source)))
+ORCA_OBJECTS := $(foreach source,$(ORCA_C_SOURCES),$(call object_for,$(source)))
+OBJECTS := $(foreach source,$(SOURCES),$(call object_for,$(source))) $(ORCA_OBJECTS)
 HEADERS := $(sort $(shell find $(LIBS) -name '*.h' -print 2>/dev/null))
 HEADER_STAMP = $(BUILD)/obj/.headers
 
@@ -47,6 +48,14 @@ $(call object_for,$(1)): $(1) $(HEADER_STAMP) Makefile.windows Makefile.common
 endef
 
 $(foreach source,$(SOURCES),$(eval $(call compile_source,$(source))))
+
+define compile_orca_source
+$(call object_for,$(1)): $(1) $(HEADER_STAMP) Makefile.windows Makefile.common
+	@mkdir -p $$(dir $$@)
+	@$(CXX) $(filter-out -std=c++17,$(CFLAGS)) -x c -c $$< -o $$@
+endef
+
+$(foreach source,$(ORCA_C_SOURCES),$(eval $(call compile_orca_source,$(source))))
 
 $(WINDOWS_ICON): packaging/windows/choochootracker.rc packaging/windows/choochootracker.ico
 	@mkdir -p $(dir $@)
@@ -100,7 +109,7 @@ native-chip-screenshots: $(NATIVE_SCREENSHOT_OBJECTS)
 	mkdir -p $(BUILD)
 	$(CC) -std=c++17 -O2 -D_USE_MATH_DEFINES \
 		-I/opt/SDL2/x86_64-w64-mingw32/include \
-		$(INCLUDES) $(SOURCES) \
+		$(INCLUDES) $(SOURCES) -x c -std=c11 $(ORCA_C_SOURCES) -x none \
 		-L/opt/SDL2/x86_64-w64-mingw32/lib \
 		-lmingw32 -lSDL2main -lSDL2 -lwinmm \
 		-static-libgcc -static-libstdc++ \

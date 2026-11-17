@@ -319,7 +319,7 @@ static int reconfigure(int sampleRate, int bufferSize) {
   return 1;
 }
 
-static void pause(void) {
+static void pauseAudio(void) {
   audioPause(1);
 }
 
@@ -646,7 +646,7 @@ struct AudioManager audioManager = {
   .reconfigure = reconfigure,
   .restart = restart,
   .refreshDevices = refreshDevices,
-  .pause = pause,
+  .pause = pauseAudio,
   .resume = resume,
   .replaceProject = replaceProject,
   .reinitializeChips = reinitializeChips,

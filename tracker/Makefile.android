@@ -56,7 +56,7 @@ android: android-lib
 
 android-lib:
 	mkdir -p $(BUILD_DIR)
-	$(CC) -shared $(CFLAGS) $(XTRA_LIBS) $(OUTPUT)
+	$(CC) -shared $(CFLAGS) -x c -std=c11 $(ORCA_C_SOURCES) -x none $(XTRA_LIBS) $(OUTPUT)
 	$(STRIP) $(BUILD_DIR)/libchipnomad.so
 
 .PHONY: android-apk

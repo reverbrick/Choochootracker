@@ -17,7 +17,7 @@ CFLAGS = $(COMMON_CFLAGS) $(INCLUDES) $(SOURCES) $(XTRA_CFLAGS)
 .PHONY: .RG35xx
 .RG35xx:
 	mkdir -p $(BUILD)
-	$(CROSS_COMPILE)$(CC) $(CFLAGS) $(XTRA_LIBS) -o $(BUILD)/chipnomad.rg35xx
+	$(CROSS_COMPILE)$(CC) $(filter-out -std=c++17,$(CFLAGS)) -x c $(ORCA_C_SOURCES) -x none $(XTRA_LIBS) -o $(BUILD)/chipnomad.rg35xx
 	chmod +x $(BUILD)/chipnomad.rg35xx
 
 .PHONY: RG35xx

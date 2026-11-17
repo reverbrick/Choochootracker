@@ -50,7 +50,10 @@ PLAITS_ALT_FIRMWARE_SOURCES = ../chipnomad_lib/external/mutable/plaits_alt/plait
 	../chipnomad_lib/external/mutable/plaits_alt/ui.cc \
 	../chipnomad_lib/external/mutable/plaits_alt/user_data_receiver.cc
 CPP_SOURCES = $(filter-out $(PLAITS_ALT_FIRMWARE_SOURCES),$(foreach dir, $(LIBS), $(wildcard $(dir)/*.cpp)) $(foreach dir, $(LIBS), $(wildcard $(dir)/*.cc)))
-SOURCES = $(C_SOURCES) $(CPP_SOURCES)
+# Orca-c is upstream C and must stay out of the application's C++ source
+# list. Targets that build per-object add ORCA_C_SOURCES using C mode; the
+# one-shot targets do the same around those inputs at the compiler command.
+SOURCES = $(filter-out $(ORCA_C_SOURCES),$(C_SOURCES)) $(CPP_SOURCES)
 SRC_FILES = $(foreach dir, $(LIBS), $(wildcard $(dir)/*.c)) $(foreach dir, $(LIBS), $(wildcard $(dir)/*.cpp)) $(foreach dir, $(LIBS), $(wildcard $(dir)/*.h))
 
 # Always use C++ compiler for better compatibility with future C++ modules
@@ -68,6 +71,6 @@ COMMON_DATA_DIRS = $(patsubst packaging/common/%/,%,$(wildcard packaging/common/
 # Build target helper
 define build_target
 	mkdir -p $(BUILD)
-	$(COMPILER) $(filter-out $(ORCA_C_SOURCES),$(CFLAGS)) -x c $(ORCA_C_SOURCES) -x none $(CPP_LIBS) $(XTRA_LIBS) $(OUTPUT)
+	$(COMPILER) $(filter-out $(ORCA_C_SOURCES),$(CFLAGS)) -x c -std=c11 $(ORCA_C_SOURCES) -x none $(CPP_LIBS) $(XTRA_LIBS) $(OUTPUT)
 	chmod +x $(BUILD)/choochootracker$(OUTPUT_EXT)
 endef

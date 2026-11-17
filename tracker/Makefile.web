@@ -33,7 +33,7 @@ SOURCES += platforms/web/midi_backend_web.cpp
 
 web:
 	@mkdir -p $(WEB_BUILD)
-	$(EMXX) $(WEB_CFLAGS) $(SOURCES) $(WEB_LDFLAGS) -o $(WEB_BUILD)/choochootracker.html \
+	$(EMXX) $(WEB_CFLAGS) $(SOURCES) -x c -std=c11 $(ORCA_C_SOURCES) -x none $(WEB_LDFLAGS) -o $(WEB_BUILD)/choochootracker.html \
 	-sASSERTIONS=1 -sSTACK_SIZE=8388608 -sGL_ASSERTIONS=1
 	@cp ../web/index.html $(WEB_BUILD)/index.html
 	@cp ../web/privacy.html $(WEB_BUILD)/privacy.html

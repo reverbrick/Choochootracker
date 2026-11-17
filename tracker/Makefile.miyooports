@@ -25,7 +25,8 @@ XTRA_LIBS = -L$(MIYOO_SDL2_ROOT)/lib -lSDL2 -Wl,--allow-shlib-undefined \
   -lstdc++fs -static-libstdc++ -static-libgcc -ldl -lpthread -lm
 
 object_for = $(BUILD)/obj/$(subst ../,up/,$(basename $(1))).o
-OBJECTS := $(foreach source,$(SOURCES),$(call object_for,$(source)))
+ORCA_OBJECTS := $(foreach source,$(ORCA_C_SOURCES),$(call object_for,$(source)))
+OBJECTS := $(foreach source,$(SOURCES),$(call object_for,$(source))) $(ORCA_OBJECTS)
 DEPS := $(OBJECTS:.o=.d)
 TARGET = $(BUILD)/choochootracker
 
@@ -36,6 +37,14 @@ $(call object_for,$(1)): $(1) Makefile.miyooports Makefile.common
 endef
 
 $(foreach source,$(SOURCES),$(eval $(call compile_source,$(source))))
+
+define compile_orca_source
+$(call object_for,$(1)): $(1) Makefile.miyooports Makefile.common
+	@mkdir -p $$(dir $$@)
+	@$(CXX) $(filter-out -std=c++17,$(CFLAGS)) -x c -MMD -MP -c $$< -o $$@
+endef
+
+$(foreach source,$(ORCA_C_SOURCES),$(eval $(call compile_orca_source,$(source))))
 -include $(DEPS)
 
 .PHONY: MiyooPorts MiyooPorts-deploy
