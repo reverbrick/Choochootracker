@@ -1933,6 +1933,15 @@ int chipnomadQueueMidiInput(ChipNomadState* state, int track, uint8_t note, uint
   if (!state || !state->audioCommands || track < 0 || track >= state->project.tracksCount) return 0;
   return state->audioCommands->pushMidiInput(track, note, instrument, velocity, timestamp, record, mode);
 }
+void chipnomadDispatchMidiInputAudioOwned(ChipNomadState* state, int track,
+                                         uint8_t note, uint8_t instrument,
+                                         uint8_t velocity) {
+  if (!state || track < 0 || track >= state->audioProject.tracksCount) return;
+  // This is intended to run inside advancePlaybackFrame, before
+  // playbackNextFrame. The normal frame path applies the pending MIDI note,
+  // updates voices and renders it without crossing the UI command queue.
+  playbackMidiInput(&state->playbackState, track, note, instrument, velocity);
+}
 int chipnomadConsumeMidiRecordEvent(ChipNomadState* state, MidiRecordEvent* event) {
   return state && state->audioCommands && event ? state->audioCommands->midiRecording.consume(event) : 0;
 }
