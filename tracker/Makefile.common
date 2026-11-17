@@ -38,6 +38,10 @@ INCLUDES = $(addprefix -I, $(INCLUDE_LIBS)) -I../chipnomad_lib -I../chipnomad_li
 	-I../chipnomad_lib/external/ableton_link/include -I../chipnomad_lib/external/asio/include
 # Open303's Fourier wrapper includes fft4g.c directly.
 C_SOURCES = $(filter-out ../chipnomad_lib/external/open303/Source/DSPCode/fft4g.c,$(foreach dir, $(LIBS), $(wildcard $(dir)/*.c)))
+# Orca-c uses C allocation conversions and restrict syntax that are not valid
+# when its sources are parsed as C++. Keep the upstream files unchanged and
+# select C mode for them in the common one-shot desktop build.
+ORCA_C_SOURCES = $(wildcard ../chipnomad_lib/orca/*.c)
 # The Plaits-Alt checkout also contains the STM32 module application. Tracker
 # needs its DSP/resources only; compiling its firmware UI would pull hardware
 # dependencies into every desktop target.
@@ -64,6 +68,6 @@ COMMON_DATA_DIRS = $(patsubst packaging/common/%/,%,$(wildcard packaging/common/
 # Build target helper
 define build_target
 	mkdir -p $(BUILD)
-	$(COMPILER) $(CFLAGS) $(CPP_LIBS) $(XTRA_LIBS) $(OUTPUT)
+	$(COMPILER) $(filter-out $(ORCA_C_SOURCES),$(CFLAGS)) -x c $(ORCA_C_SOURCES) -x none $(CPP_LIBS) $(XTRA_LIBS) $(OUTPUT)
 	chmod +x $(BUILD)/choochootracker$(OUTPUT_EXT)
 endef

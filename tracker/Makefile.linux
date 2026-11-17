@@ -27,7 +27,7 @@ linux:
 .PHONY: .linux-docker
 .linux-docker:
 	mkdir -p $(BUILD)
-	g++ $(CFLAGS) $(XTRA_LIBS) $(OUTPUT)
+	g++ $(filter-out $(ORCA_C_SOURCES),$(CFLAGS)) -x c $(ORCA_C_SOURCES) -x none $(XTRA_LIBS) $(OUTPUT)
 	chmod +x $(BUILD)/choochootracker
 
 # Linux deployment using Docker
